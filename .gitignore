@@ -1,5 +1,7 @@
 /target
 products/trivia/.env
+kodoo-ops/slt/target/
+kodoo-ops/target/
 kodoo-ops/slt/target/CACHEDIR.TAG
 kodoo-ops/slt/target/debug/.cargo-build-lock
 kodoo-ops/slt/target/debug/.cargo-lock
