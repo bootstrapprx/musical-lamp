@@ -9,7 +9,7 @@
   "status": "ready",
   "note": "Ready: all 2 checks pass.",
   "created_ms": 1794595666281,
-  "updated_ms": 1794596082234,
+  "updated_ms": 1794596694600,
   "checks": [
     {
       "round": 1,
@@ -28,12 +28,30 @@
       "note": "`cargo test --quiet` passed.",
       "artifacts": [],
       "at_ms": 1794596070063
+    },
+    {
+      "round": 2,
+      "check": "build",
+      "passed": true,
+      "similarity": null,
+      "note": "`cargo build --quiet` passed.",
+      "artifacts": [],
+      "at_ms": 1794596694512
+    },
+    {
+      "round": 2,
+      "check": "own-tests",
+      "passed": true,
+      "similarity": null,
+      "note": "`cargo test --quiet` passed.",
+      "artifacts": [],
+      "at_ms": 1794596694597
     }
   ],
   "agent_session": null,
   "agent_session_by": "opencode",
   "allowed_actions": [],
-  "last_reply": "I built a complete terminal interface for managing multiple servers and app stacks, with a live cluster view that shows nodes, containers, real-time usage bars and trends, cost breakdowns, projections, and detailed tabs for logs, cost formulas, Compose details, and a 7-day forecast. You can switch views and panels from the keyboard, add a new server with a form, remove one with a safety confirmation that shows the financial impact, and simulate load to see costs and alerts update continuously.\n\nI didn’t find an existing terminal interface in this project folder to refactor, so I created this one from scratch to match what you asked for while keeping the project’s existing files in place. Real connections to your servers and Docker environments aren’t wired up yet, so the live numbers come from a realistic built-in simulation, and the Compose Stacks and Bridges & Plugins screens are simple placeholders for now.\n\nA good next step would be to connect this interface to your real servers so it can show actual containers, live metrics, and true costs from your environment.",
+  "last_reply": "I refined the terminal control panel so it gives you a clear, live view of your servers and app containers, with usage, cost estimates, projections, and detailed tabs for logs, cost breakdown, configuration details, and a 7-day outlook. You can move between panels, switch the detail views, add a new server, remove one with a safety confirmation that shows the financial impact, and simulate extra load to see the numbers react.\n\nThe interface is fully usable now, but the live figures come from a realistic built-in simulation because real connections to your servers and container environments aren’t wired in yet, and some broader views are still simple placeholders. Everything builds and checks cleanly with no warnings.\n\nA good next step would be to connect it to your real servers so it can show actual containers, live measurements, and true costs from your environment.",
   "asset_budget_usd": 5.0,
   "generate_assets": false,
   "app_in_root": true,

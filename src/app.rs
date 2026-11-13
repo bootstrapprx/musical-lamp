@@ -201,21 +201,35 @@ impl AppState {
         match key.code {
             KeyCode::Char('q') => Some(Action::Quit),
             KeyCode::Char('1') => {
-                self.view = View::ClusterFinOps;
-                if self.focus == FocusPane::Detail { self.detail_tab = DetailTab::Logs; }
+                if self.focus == FocusPane::Detail {
+                    self.detail_tab = DetailTab::Logs;
+                } else {
+                    self.view = View::ClusterFinOps;
+                }
                 None
             }
             KeyCode::Char('2') => {
-                self.view = View::ComposeStacks;
-                if self.focus == FocusPane::Detail { self.detail_tab = DetailTab::CostBreakdown; }
+                if self.focus == FocusPane::Detail {
+                    self.detail_tab = DetailTab::CostBreakdown;
+                } else {
+                    self.view = View::ComposeStacks;
+                }
                 None
             }
             KeyCode::Char('3') => {
-                self.view = View::BridgesPlugins;
-                if self.focus == FocusPane::Detail { self.detail_tab = DetailTab::ComposeYaml; }
+                if self.focus == FocusPane::Detail {
+                    self.detail_tab = DetailTab::ComposeYaml;
+                } else {
+                    self.view = View::BridgesPlugins;
+                }
                 None
             }
-            KeyCode::Char('4') => { self.detail_tab = DetailTab::Forecast7d; None }
+            KeyCode::Char('4') => {
+                if self.focus == FocusPane::Detail {
+                    self.detail_tab = DetailTab::Forecast7d;
+                }
+                None
+            }
             KeyCode::Tab => {
                 self.focus = match self.focus {
                     FocusPane::Nodes => FocusPane::Containers,

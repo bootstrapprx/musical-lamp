@@ -111,7 +111,7 @@ fn draw_footer(f: &mut Frame, area: Rect, state: &AppState) {
     let text = match state.modal {
         Modal::AddNode(_) => "[Tab] Campo | [Enter] Confirmar | [Esc] Cancelar",
         Modal::DropNode { .. } => "[Tab/←/→] Selecionar | [Enter] Confirmar | [Esc/N] Cancelar",
-        Modal::None => "[Tab] Painel | [↑/↓] Navegar | [1-3] Views | [l/b/y/4] Aba | [a] Add Node | [d] Drop Node | [s] Simular Carga | [q] Sair",
+        Modal::None => "[Tab] Switch Pane | [↑/↓] Navigate | [1-4] Detail Tab | [a] Add Node | [d] Drop Node | [s] Simulate Load | [q] Quit",
     };
     let p = Paragraph::new(text)
         .style(Style::default().fg(theme::SUBTEXT))
