@@ -211,7 +211,7 @@ fn draw_footer(f: &mut Frame, area: Rect, state: &AppState) {
             View::ComposeStacks => "[↑/↓] Rolar | [p] Produto | [1-5] Views | [q] Sair",
             View::BridgesPlugins => "[p] Produto | [1-5] Views | [q] Sair",
             View::EnvLifecycle => if state.env_editing { "[Enter] Salvar valor | [Esc] Cancelar edição | (digitando)" } else { "[↑/↓] Variável | [Enter] Editar | [g] Exemplo | [n] Gerar segredo | [v] Revelar | [r] Recarregar | [w] Salvar .env | [p] Produto | [1-5] Views | [q] Sair" },
-            View::Operations => "[↑/↓/←/→] Ação | [Enter] Executar | [u] Up | [x] Down | [m] Migrar | [k] Status | [o] Logs | [p] Produto | [1-5] Views | [q] Sair",
+            View::Operations => "[↑/↓] Ação | [Enter] Executar | [u] Subir | [x] Parar | [c] Consultar stack | [f] Pre-flight | [i] Onboarding | [m] Migrar | [o] Logs | [p] Produto | [1-5] Views | [q] Sair",
         },
     };
     let p = Paragraph::new(text)

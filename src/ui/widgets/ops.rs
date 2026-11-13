@@ -5,7 +5,7 @@ use ratatui::widgets::{Block, BorderType, Borders, List, ListItem, Paragraph, Wr
 use ratatui::Frame;
 
 use crate::app::AppState;
-use crate::domain::StackState;
+use crate::domain::{PreflightStatus, StackState};
 use crate::ui::theme;
 
 pub fn draw(f: &mut Frame, area: Rect, state: &AppState) {
@@ -53,7 +53,7 @@ pub fn draw(f: &mut Frame, area: Rect, state: &AppState) {
             Span::styled(&ops.last_action, Style::default().fg(theme::TEXT)),
         ]),
         Line::from(Span::styled(
-            "Ciclo de vida via common/dc.sh <produto> (simulado com segurança nesta TUI)",
+            "Subir, parar, consultar, pré-checar e iniciar configuração (execução simulada com segurança).",
             Style::default().fg(theme::SUBTEXT),
         )),
     ];
@@ -73,32 +73,18 @@ pub fn draw(f: &mut Frame, area: Rect, state: &AppState) {
         .split(chunks[1]);
 
     let actions = [
-        (
-            "up",
-            "[u] Subir stack (up -d)",
-            "Inicia serviços do produto",
-        ),
-        (
-            "down",
-            "[x] Parar stack (down)",
-            "Para e remove containers do compose",
-        ),
-        (
-            "migrate",
-            "[m] Migrar site",
-            "Executa bench migrate via serviço ops",
-        ),
-        (
-            "status",
-            "[k] Atualizar status",
-            "Consulta estado atual do stack",
-        ),
-        ("logs", "[o] Ver logs", "Consulta logs recentes do compose"),
+        ("[u] Subir stack", "Inicia os serviços (up -d)"),
+        ("[x] Parar stack", "Para e remove containers (down)"),
+        ("[c] Consultar stack", "Consulta status e serviços do compose"),
+        ("[f] Pre-flight", "Valida .env, arquivos e prontidão"),
+        ("[i] Onboarding", "Abre/fecha guia de configuração inicial"),
+        ("[m] Migrar site", "Executa bench migrate via serviço ops"),
+        ("[o] Ver logs", "Consulta logs recentes da stack"),
     ];
     let items: Vec<ListItem> = actions
         .iter()
         .enumerate()
-        .map(|(i, (_, title, desc))| {
+        .map(|(i, (title, desc))| {
             let selected = i == state.ops_selected_action;
             ListItem::new(vec![
                 Line::from(Span::styled(
@@ -129,36 +115,91 @@ pub fn draw(f: &mut Frame, area: Rect, state: &AppState) {
 
     let right = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Percentage(45), Constraint::Percentage(55)])
+        .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
         .split(body[1]);
 
-    let mut plan = vec![Line::from(Span::styled(
-        "Comandos de referência",
-        Style::default()
-            .fg(theme::MAUVE)
-            .add_modifier(Modifier::BOLD),
-    ))];
-    let p = state.featured_product.label();
-    plan.push(Line::from(format!("• common/dc.sh {p} up -d")));
-    plan.push(Line::from(format!("• common/dc.sh {p} down")));
-    plan.push(Line::from(format!("• common/dc.sh {p} logs --tail=100")));
-    plan.push(Line::from(format!(
-        "• common/dc.sh {p} run --rm ops bench --site <SITE> migrate"
-    )));
-    plan.push(Line::from(""));
-    plan.push(Line::from(Span::styled(
-        "A execução aqui é simulada para demonstrar o fluxo com segurança no ambiente atual.",
-        Style::default().fg(theme::YELLOW),
-    )));
-    f.render_widget(
-        Paragraph::new(plan).wrap(Wrap { trim: true }).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .title("Plano / Referência"),
-        ),
-        right[0],
-    );
+    // top-right: onboarding or preflight summary/reference
+    if state.show_onboarding {
+        let mut lines = vec![Line::from(Span::styled(
+            "Onboarding — configuração inicial",
+            Style::default()
+                .fg(theme::MAUVE)
+                .add_modifier(Modifier::BOLD),
+        ))];
+        for step in &state.onboarding_steps {
+            let (mark, color) = if step.done {
+                ("✔", theme::GREEN)
+            } else {
+                ("○", theme::YELLOW)
+            };
+            lines.push(Line::from(vec![
+                Span::styled(format!("{mark} "), Style::default().fg(color)),
+                Span::styled(
+                    step.title.clone(),
+                    Style::default().fg(if step.done { theme::TEXT } else { theme::PEACH }),
+                ),
+            ]));
+            lines.push(Line::from(Span::styled(
+                format!("    {}", step.detail),
+                Style::default().fg(theme::SUBTEXT),
+            )));
+        }
+        f.render_widget(
+            Paragraph::new(lines).wrap(Wrap { trim: true }).block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .title("Onboarding ([i] fechar)"),
+            ),
+            right[0],
+        );
+    } else {
+        let mut lines = vec![Line::from(Span::styled(
+            "Pre-flight — checagens de prontidão",
+            Style::default()
+                .fg(theme::MAUVE)
+                .add_modifier(Modifier::BOLD),
+        ))];
+        if !state.preflight_ran {
+            lines.push(Line::from(Span::styled(
+                "Nenhuma checagem executada ainda. Use [f] Pre-flight.",
+                Style::default().fg(theme::SUBTEXT),
+            )));
+            let p = state.featured_product.label();
+            lines.push(Line::from(""));
+            lines.push(Line::from(format!("Referência: common/dc.sh {p} up -d")));
+            lines.push(Line::from(format!("Referência: common/dc.sh {p} down")));
+            lines.push(Line::from(format!("Referência: common/dc.sh {p} ps / logs")));
+        } else {
+            for c in &state.preflight {
+                let (mark, color) = match c.status {
+                    PreflightStatus::Ok => ("OK", theme::GREEN),
+                    PreflightStatus::Warn => ("AVISO", theme::YELLOW),
+                    PreflightStatus::Error => ("ERRO", theme::RED),
+                    PreflightStatus::Pending => ("...", theme::SUBTEXT),
+                };
+                lines.push(Line::from(vec![
+                    Span::styled(format!("[{mark}] "), Style::default().fg(color)),
+                    Span::styled(format!("{}: ", c.name), Style::default().fg(theme::TEXT)),
+                    Span::styled(c.detail.clone(), Style::default().fg(theme::SUBTEXT)),
+                ]));
+            }
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "Use [i] Onboarding para ver o passo a passo de configuração.",
+                Style::default().fg(theme::SUBTEXT),
+            )));
+        }
+        f.render_widget(
+            Paragraph::new(lines).wrap(Wrap { trim: true }).block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .title("Pre-flight / Referência"),
+            ),
+            right[0],
+        );
+    }
 
     let log_items: Vec<ListItem> = if ops.log_lines.is_empty() {
         vec![ListItem::new("(sem eventos)")]
@@ -180,7 +221,7 @@ pub fn draw(f: &mut Frame, area: Rect, state: &AppState) {
         Block::default()
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
-            .title("Eventos recentes"),
+            .title("Eventos / Consulta da stack"),
     );
     f.render_widget(logs, right[1]);
 }

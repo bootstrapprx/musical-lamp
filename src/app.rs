@@ -6,7 +6,8 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::action::{Action, Event};
 use crate::domain::{
-    allocate_costs, Container, EnvVar, Node, OpsStatus, Product, ProductEnv, StackState,
+    allocate_costs, Container, EnvVar, Node, OnboardingStep, OpsStatus, PreflightCheck,
+    PreflightStatus, Product, ProductEnv, StackState,
 };
 use crate::ops_core::{envfile, secrets, validate};
 use crate::telemetry::TelemetryProvider;
@@ -95,6 +96,10 @@ pub struct AppState {
     pub env_input: String,
     pub ops_states: HashMap<Product, OpsStatus>,
     pub ops_selected_action: usize,
+    pub preflight: Vec<PreflightCheck>,
+    pub preflight_ran: bool,
+    pub onboarding_steps: Vec<OnboardingStep>,
+    pub show_onboarding: bool,
 }
 
 impl AppState {
@@ -228,7 +233,7 @@ impl AppState {
             },
         );
 
-        Self {
+        let mut s = Self {
             should_quit: false,
             view: View::ClusterFinOps,
             focus: FocusPane::Nodes,
@@ -248,7 +253,13 @@ impl AppState {
             env_input: String::new(),
             ops_states,
             ops_selected_action: 0,
-        }
+            preflight: Vec::new(),
+            preflight_ran: false,
+            onboarding_steps: Vec::new(),
+            show_onboarding: false,
+        };
+        s.refresh_onboarding();
+        s
     }
 
     pub fn projected_total(&self) -> f64 {
@@ -351,6 +362,9 @@ impl AppState {
             KeyCode::Char('p') => {
                 self.featured_product = self.featured_product.toggle();
                 self.clamp_env_selection();
+                self.preflight.clear();
+                self.preflight_ran = false;
+                self.refresh_onboarding();
                 if self.view == View::BridgesPlugins && !env_has_tunnel_token(self.featured_product)
                 {
                     self.modal = Modal::TunnelToken {
@@ -476,12 +490,20 @@ impl AppState {
                 self.run_ops_action("down");
                 None
             }
-            KeyCode::Char('m') if self.view == View::Operations => {
-                self.run_ops_action("migrate");
+            KeyCode::Char('c') if self.view == View::Operations => {
+                self.run_ops_action("status");
                 None
             }
-            KeyCode::Char('k') if self.view == View::Operations => {
-                self.run_ops_action("status");
+            KeyCode::Char('f') if self.view == View::Operations => {
+                self.run_ops_action("preflight");
+                None
+            }
+            KeyCode::Char('i') if self.view == View::Operations => {
+                self.run_ops_action("onboarding");
+                None
+            }
+            KeyCode::Char('m') if self.view == View::Operations => {
+                self.run_ops_action("migrate");
                 None
             }
             KeyCode::Char('o') if self.view == View::Operations => {
@@ -493,7 +515,7 @@ impl AppState {
                 None
             }
             KeyCode::Right if self.view == View::Operations => {
-                if self.ops_selected_action < 4 {
+                if self.ops_selected_action < 6 {
                     self.ops_selected_action += 1;
                 }
                 None
@@ -575,7 +597,7 @@ impl AppState {
                     }
                 }
             }
-            View::Operations if self.ops_selected_action < 4 => {
+            View::Operations if self.ops_selected_action < 6 => {
                 self.ops_selected_action += 1;
             }
             _ => {}
@@ -666,11 +688,11 @@ impl AppState {
             Err(e) => format!("falha ao ler exemplo: {e}"),
         };
         if let Some(env) = self.env_states.get_mut(&product) {
-            if !msg.starts_with("falha") { /* ok */
-            } else {
+            if msg.starts_with("falha") {
                 env.last_action = msg;
             }
         }
+        self.refresh_onboarding();
     }
 
     fn toggle_env_reveal(&mut self) {
@@ -712,6 +734,7 @@ impl AppState {
         let loaded = load_env_state(product);
         self.env_states.insert(product, loaded);
         self.clamp_env_selection();
+        self.refresh_onboarding();
     }
 
     fn save_env(&mut self) {
@@ -737,44 +760,72 @@ impl AppState {
                 }
             }
         }
+        self.refresh_onboarding();
     }
 
     fn run_ops_action(&mut self, action: &str) {
         let product = self.featured_product;
         let label = product.label().to_string();
+        match action {
+            "preflight" => {
+                self.run_preflight();
+                return;
+            }
+            "onboarding" => {
+                self.show_onboarding = !self.show_onboarding;
+                self.refresh_onboarding();
+                if let Some(ops) = self.ops_states.get_mut(&product) {
+                    ops.last_action = if self.show_onboarding {
+                        "onboarding aberto".into()
+                    } else {
+                        "onboarding fechado".into()
+                    };
+                }
+                return;
+            }
+            _ => {}
+        }
         if let Some(ops) = self.ops_states.get_mut(&product) {
             match action {
                 "up" => {
                     ops.state = StackState::Starting;
-                    ops.last_action = "subindo stack (simulado)".into();
+                    ops.last_action = "subir stack solicitado (simulado, execução segura)".into();
                     ops.log_lines
-                        .push(format!("[ops] common/dc.sh {label} up -d (simulado)"));
+                        .push(format!("[subir] common/dc.sh {label} up -d"));
                 }
                 "down" => {
                     ops.state = StackState::Stopping;
-                    ops.last_action = "parando stack (simulado)".into();
+                    ops.last_action = "parar stack solicitado (simulado, execução segura)".into();
                     ops.log_lines
-                        .push(format!("[ops] common/dc.sh {label} down (simulado)"));
+                        .push(format!("[parar] common/dc.sh {label} down"));
                 }
                 "migrate" => {
                     ops.last_action = "migração solicitada (simulada)".into();
-                    ops.log_lines.push(format!("[ops] common/dc.sh {label} run --rm ops bench --site <SITE> migrate (simulado)"));
+                    ops.log_lines.push(format!(
+                        "[migrar] common/dc.sh {label} run --rm ops bench --site <SITE> migrate"
+                    ));
                 }
                 "status" => {
-                    ops.last_action = "status atualizado (simulado)".into();
-                    ops.log_lines
-                        .push(format!("[ops] estado atual: {}", ops.state.label()));
+                    ops.last_action = "consulta da stack atualizada (simulada)".into();
+                    ops.log_lines.push(format!(
+                        "[consultar] common/dc.sh {label} ps  → estado: {}",
+                        ops.state.label()
+                    ));
+                    ops.log_lines.push(
+                        "[consultar] serviços base: configurator, backend, frontend, db, redis, cloudflared"
+                            .to_string(),
+                    );
                 }
                 "logs" => {
-                    ops.last_action = "logs consultados (simulado)".into();
+                    ops.last_action = "logs da stack consultados (simulados)".into();
                     ops.log_lines.push(format!(
-                        "[ops] common/dc.sh {label} logs --tail=50 (simulado)"
+                        "[consultar] common/dc.sh {label} logs --tail=50"
                     ));
                 }
                 _ => {}
             }
-            if ops.log_lines.len() > 80 {
-                let drain = ops.log_lines.len() - 80;
+            if ops.log_lines.len() > 120 {
+                let drain = ops.log_lines.len() - 120;
                 ops.log_lines.drain(0..drain);
             }
         }
@@ -784,11 +835,242 @@ impl AppState {
         let action = match self.ops_selected_action {
             0 => "up",
             1 => "down",
-            2 => "migrate",
-            3 => "status",
+            2 => "status",
+            3 => "preflight",
+            4 => "onboarding",
+            5 => "migrate",
             _ => "logs",
         };
         self.run_ops_action(action);
+    }
+
+    pub fn run_preflight(&mut self) {
+        let product = self.featured_product;
+        let label = product.label();
+        let mut checks = Vec::new();
+        let env_path = Path::new("products").join(label).join(".env");
+        let example_path = Path::new("products").join(label).join(".env.example");
+        let compose_base = Path::new("common/compose.base.yaml");
+        let dc = Path::new("common/dc.sh");
+
+        checks.push(if compose_base.exists() {
+            PreflightCheck {
+                name: "Compose base".into(),
+                status: PreflightStatus::Ok,
+                detail: "common/compose.base.yaml encontrado".into(),
+            }
+        } else {
+            PreflightCheck {
+                name: "Compose base".into(),
+                status: PreflightStatus::Error,
+                detail: "common/compose.base.yaml ausente".into(),
+            }
+        });
+        checks.push(if dc.exists() {
+            PreflightCheck {
+                name: "Script de orquestração".into(),
+                status: PreflightStatus::Ok,
+                detail: "common/dc.sh disponível".into(),
+            }
+        } else {
+            PreflightCheck {
+                name: "Script de orquestração".into(),
+                status: PreflightStatus::Error,
+                detail: "common/dc.sh ausente".into(),
+            }
+        });
+        checks.push(if example_path.exists() {
+            PreflightCheck {
+                name: "Modelo .env".into(),
+                status: PreflightStatus::Ok,
+                detail: format!("products/{label}/.env.example encontrado"),
+            }
+        } else {
+            PreflightCheck {
+                name: "Modelo .env".into(),
+                status: PreflightStatus::Warn,
+                detail: "arquivo .env.example não encontrado".into(),
+            }
+        });
+        checks.push(if env_path.exists() {
+            PreflightCheck {
+                name: "Arquivo .env".into(),
+                status: PreflightStatus::Ok,
+                detail: format!("products/{label}/.env presente"),
+            }
+        } else {
+            PreflightCheck {
+                name: "Arquivo .env".into(),
+                status: PreflightStatus::Error,
+                detail: "gere o .env a partir do exemplo antes de subir".into(),
+            }
+        });
+
+        if let Ok(content) = fs::read_to_string(&env_path) {
+            let ef = envfile::EnvFile::parse(&content);
+            let other = fs::read_to_string(product_env_path(product.toggle()))
+                .ok()
+                .map(|c| envfile::EnvFile::parse(&c));
+            let findings = validate::validate_env(&ef, &env_path, other.as_ref());
+            let errors = findings
+                .iter()
+                .filter(|f| matches!(f.severity, validate::Severity::Error))
+                .count();
+            let warns = findings
+                .iter()
+                .filter(|f| matches!(f.severity, validate::Severity::Warn))
+                .count();
+            let (st, detail) = if errors > 0 {
+                (
+                    PreflightStatus::Error,
+                    format!("{errors} erro(s) e {warns} aviso(s) no .env"),
+                )
+            } else if warns > 0 {
+                (
+                    PreflightStatus::Warn,
+                    format!("{warns} aviso(s) no .env, sem erros bloqueantes"),
+                )
+            } else {
+                (PreflightStatus::Ok, "validações do .env sem alertas".into())
+            };
+            checks.push(PreflightCheck {
+                name: "Validação do .env".into(),
+                status: st,
+                detail,
+            });
+            if let Ok(ex) = fs::read_to_string(&example_path) {
+                let drift = validate::drift(&ef, &envfile::EnvFile::parse(&ex));
+                if drift.is_empty() {
+                    checks.push(PreflightCheck {
+                        name: "Drift .env".into(),
+                        status: PreflightStatus::Ok,
+                        detail: "alinhado com .env.example".into(),
+                    });
+                } else {
+                    checks.push(PreflightCheck {
+                        name: "Drift .env".into(),
+                        status: PreflightStatus::Warn,
+                        detail: format!("{} diferença(s) em relação ao exemplo", drift.len()),
+                    });
+                }
+            }
+        }
+
+        let bfind = validate::validate_build(Path::new("products").join(label).as_path());
+        let b_err = bfind
+            .iter()
+            .filter(|f| matches!(f.severity, validate::Severity::Error))
+            .count();
+        checks.push(if bfind.is_empty() {
+            PreflightCheck {
+                name: "Build do produto".into(),
+                status: PreflightStatus::Ok,
+                detail: "build.env/apps.json sem alertas".into(),
+            }
+        } else if b_err > 0 {
+            PreflightCheck {
+                name: "Build do produto".into(),
+                status: PreflightStatus::Warn,
+                detail: format!("{} alerta(s) em build.env/apps.json", bfind.len()),
+            }
+        } else {
+            PreflightCheck {
+                name: "Build do produto".into(),
+                status: PreflightStatus::Warn,
+                detail: format!("{} observação(ões) em build.env/apps.json", bfind.len()),
+            }
+        });
+
+        self.preflight = checks;
+        self.preflight_ran = true;
+        self.refresh_onboarding();
+        if let Some(ops) = self.ops_states.get_mut(&product) {
+            let errs = self
+                .preflight
+                .iter()
+                .filter(|c| matches!(c.status, PreflightStatus::Error))
+                .count();
+            ops.last_action = if errs == 0 {
+                "pré-checagem concluída: pronto para subir (ou com avisos)".into()
+            } else {
+                format!("pré-checagem concluída: {errs} item(ns) exigem atenção")
+            };
+            ops.log_lines
+                .push(format!("[pre-flight] verificação executada para {label}"));
+        }
+    }
+
+    pub fn refresh_onboarding(&mut self) {
+        let product = self.featured_product;
+        let label = product.label();
+        let env_path = Path::new("products").join(label).join(".env");
+        let example_path = Path::new("products").join(label).join(".env.example");
+        let env = self.env_states.get(&product);
+        let has_env = env_path.exists();
+        let has_example = example_path.exists();
+        let tunnel_ok = env_has_tunnel_token(product);
+        let critical_missing = env
+            .map(|e| {
+                e.vars.iter().any(|v| {
+                    ["IMAGE_REF", "DB_PASSWORD", "TUNNEL_TOKEN"].contains(&v.key.as_str())
+                        && v.value.trim().is_empty()
+                })
+            })
+            .unwrap_or(true);
+        let pre_ok = self.preflight_ran
+            && !self
+                .preflight
+                .iter()
+                .any(|c| matches!(c.status, PreflightStatus::Error));
+
+        self.onboarding_steps = vec![
+            OnboardingStep {
+                title: "1. Conferir produto e arquivos".into(),
+                done: has_example,
+                detail: if has_example {
+                    format!("Modelo products/{label}/.env.example disponível")
+                } else {
+                    "Modelo .env.example não encontrado".into()
+                },
+            },
+            OnboardingStep {
+                title: "2. Gerar e ajustar .env".into(),
+                done: has_env && !critical_missing,
+                detail: if !has_env {
+                    "Abra a aba [4] .env e use [g] para gerar a partir do exemplo".into()
+                } else if critical_missing {
+                    "Preencha IMAGE_REF, DB_PASSWORD e TUNNEL_TOKEN na aba [4] .env".into()
+                } else {
+                    "Variáveis essenciais presentes".into()
+                },
+            },
+            OnboardingStep {
+                title: "3. Configurar túnel Cloudflare".into(),
+                done: tunnel_ok,
+                detail: if tunnel_ok {
+                    "TUNNEL_TOKEN configurado para o produto".into()
+                } else {
+                    "Informe o TUNNEL_TOKEN na aba [3] Bridges & Plugins ou [4] .env".into()
+                },
+            },
+            OnboardingStep {
+                title: "4. Rodar pré-checagem".into(),
+                done: pre_ok,
+                detail: if pre_ok {
+                    "Pré-checagem sem erros bloqueantes".into()
+                } else {
+                    "Na aba [5] Operações execute [f] Pre-flight".into()
+                },
+            },
+            OnboardingStep {
+                title: "5. Subir e consultar a stack".into(),
+                done: matches!(
+                    self.ops_states.get(&product).map(|o| o.state),
+                    Some(StackState::Running)
+                ),
+                detail: "Use [u] Subir stack e [c] Consultar stack na aba [5]".into(),
+            },
+        ];
     }
 
     fn handle_add_node_key(&mut self, key: KeyEvent) -> Option<Action> {
@@ -913,6 +1195,7 @@ impl AppState {
                 if !token.is_empty() && set_tunnel_token(product, &token).is_ok() {
                     self.env_states.insert(product, load_env_state(product));
                 }
+                self.refresh_onboarding();
                 self.modal = Modal::None;
             }
             KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {

@@ -1,4 +1,5 @@
 //! .env reader/writer preserving order, comments and blank lines (adapted from kodoo-ops).
+#![allow(dead_code)]
 use std::fs;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -138,7 +139,7 @@ impl EnvFile {
     }
 
     pub fn is_blank(&self, key: &str) -> bool {
-        self.get(key).map_or(true, |v| v.trim().is_empty())
+        self.get(key).is_none_or(|v| v.trim().is_empty())
     }
 
     pub fn keys(&self) -> Vec<&str> {

@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use std::fmt;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

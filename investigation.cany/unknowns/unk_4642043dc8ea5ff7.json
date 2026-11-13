@@ -1,0 +1,13 @@
+{
+  "id": "unk_4642043dc8ea5ff7",
+  "revision": 1,
+  "question": "O que a imagem anexada mostrava sobre as opções de subir, parar, consultar stack e pre-flight/onboarding?",
+  "severity": "medium",
+  "domain": "general",
+  "status": "open",
+  "probes": [
+    "Abrir e ler o conteúdo visual da imagem anexada (picture-1.png) para ver layout, rótulos ou botões esperados."
+  ],
+  "evidence_for": [],
+  "evidence_against": []
+}

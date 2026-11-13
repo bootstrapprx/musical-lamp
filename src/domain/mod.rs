@@ -103,6 +103,28 @@ pub struct OpsStatus {
     pub log_lines: Vec<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PreflightStatus {
+    Pending,
+    Ok,
+    Warn,
+    Error,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PreflightCheck {
+    pub name: String,
+    pub status: PreflightStatus,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OnboardingStep {
+    pub title: String,
+    pub done: bool,
+    pub detail: String,
+}
+
 pub fn allocate_costs(nodes: &[Node], containers: &[Container]) -> Vec<(String, f64)> {
     // returns (container_id or special "__idle__:<node_id>", monthly_cost)
     let mut out = Vec::new();

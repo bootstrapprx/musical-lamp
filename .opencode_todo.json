@@ -1,32 +1,38 @@
 [
   {
-    "id": "discover",
-    "content": "Understand the existing app and the extra code to merge",
+    "id": "1",
+    "content": "Entender como a interface atual funciona e o que falta",
     "status": "completed",
     "priority": "high"
   },
   {
-    "id": "merge-capabilities",
-    "content": "Bring the useful settings and operations features into the app",
+    "id": "2",
+    "content": "Adicionar as opções para subir, parar e consultar a pilha",
     "status": "completed",
     "priority": "high"
   },
   {
-    "id": "build-interface",
-    "content": "Shape the screen to show servers, containers, costs, and controls clearly",
+    "id": "3",
+    "content": "Criar a checagem prévia antes de iniciar",
     "status": "completed",
     "priority": "high"
   },
   {
-    "id": "clean-and-test",
-    "content": "Remove leftover code and make sure the app builds and runs checks",
+    "id": "4",
+    "content": "Criar o passo a passo inicial de configuração",
     "status": "completed",
     "priority": "high"
   },
   {
-    "id": "final-review",
-    "content": "Review what is done and note anything still uncertain",
+    "id": "5",
+    "content": "Ajustar a aparência e os controles para tudo ficar claro",
     "status": "completed",
     "priority": "medium"
+  },
+  {
+    "id": "6",
+    "content": "Compilar e testar o resultado",
+    "status": "completed",
+    "priority": "high"
   }
 ]
