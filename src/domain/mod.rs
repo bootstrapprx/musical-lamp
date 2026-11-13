@@ -34,6 +34,73 @@ impl Node {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Product {
+    Accounting,
+    Trivia,
+}
+
+impl Product {
+    pub fn label(self) -> &'static str {
+        match self {
+            Product::Accounting => "accounting",
+            Product::Trivia => "trivia",
+        }
+    }
+
+    pub fn toggle(self) -> Self {
+        match self {
+            Product::Accounting => Product::Trivia,
+            Product::Trivia => Product::Accounting,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EnvVar {
+    pub key: String,
+    pub value: String,
+    pub comment: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProductEnv {
+    pub product: Product,
+    pub path_hint: String,
+    pub vars: Vec<EnvVar>,
+    pub dirty: bool,
+    pub last_action: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum StackState {
+    Stopped,
+    Starting,
+    Running,
+    Degraded,
+    Stopping,
+}
+
+impl StackState {
+    pub fn label(self) -> &'static str {
+        match self {
+            StackState::Stopped => "stopped",
+            StackState::Starting => "starting",
+            StackState::Running => "running",
+            StackState::Degraded => "degraded",
+            StackState::Stopping => "stopping",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OpsStatus {
+    pub product: Product,
+    pub state: StackState,
+    pub last_action: String,
+    pub log_lines: Vec<String>,
+}
+
 pub fn allocate_costs(nodes: &[Node], containers: &[Container]) -> Vec<(String, f64)> {
     // returns (container_id or special "__idle__:<node_id>", monthly_cost)
     let mut out = Vec::new();

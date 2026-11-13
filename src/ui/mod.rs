@@ -8,12 +8,12 @@ use ratatui::widgets::{Block, BorderType, Borders, Paragraph, Tabs, Wrap};
 use ratatui::Frame;
 
 use crate::app::{AppState, FocusPane, Modal, View};
-use crate::ui::widgets::{containers, finops, modals, nodes};
+use crate::ui::widgets::{containers, env as envw, finops, modals, nodes, ops as opsw, stacks};
 
 pub fn draw(f: &mut Frame, state: &AppState) {
     let size = f.area();
-    if size.width < 40 || size.height < 12 {
-        let msg = Paragraph::new("Terminal muito pequeno. Aumente a janela.")
+    if size.width < 50 || size.height < 14 {
+        let msg = Paragraph::new("Terminal muito pequeno. Aumente a janela para usar a TUI.")
             .style(Style::default().fg(theme::YELLOW))
             .block(Block::default().borders(Borders::ALL).title("TUI"));
         f.render_widget(msg, size);
@@ -41,23 +41,38 @@ pub fn draw(f: &mut Frame, state: &AppState) {
 }
 
 fn draw_header(f: &mut Frame, area: Rect, state: &AppState) {
-    let titles = vec!["[1] Cluster & FinOps", "[2] Compose Stacks", "[3] Bridges & Plugins"];
+    let titles = vec![
+        "[1] Cluster & FinOps",
+        "[2] Compose Stacks",
+        "[3] Bridges & Plugins",
+        "[4] .env",
+        "[5] Operações",
+    ];
     let selected = match state.view {
         View::ClusterFinOps => 0,
         View::ComposeStacks => 1,
         View::BridgesPlugins => 2,
+        View::EnvLifecycle => 3,
+        View::Operations => 4,
     };
     let projected = state.projected_total();
     let budget_color = theme::budget_color(projected, state.budget);
     let header = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(30), Constraint::Percentage(40), Constraint::Percentage(30)])
+        .constraints([Constraint::Percentage(28), Constraint::Percentage(44), Constraint::Percentage(28)])
         .split(area);
 
-    let left = Paragraph::new(Line::from(vec![
-        Span::styled("Kodoo Orchestrator ", Style::default().fg(theme::MAUVE).add_modifier(Modifier::BOLD)),
-        Span::styled("v0.1.0", Style::default().fg(theme::SUBTEXT)),
-    ])).block(Block::default().borders(Borders::ALL).border_type(BorderType::Rounded).title("Projeto"));
+    let left = Paragraph::new(vec![
+        Line::from(vec![
+            Span::styled("Kodoo Orchestrator ", Style::default().fg(theme::MAUVE).add_modifier(Modifier::BOLD)),
+            Span::styled("v0.1.0", Style::default().fg(theme::SUBTEXT)),
+        ]),
+        Line::from(vec![
+            Span::styled("Produto: ", Style::default().fg(theme::SUBTEXT)),
+            Span::styled(state.featured_product.label(), Style::default().fg(theme::TEAL).add_modifier(Modifier::BOLD)),
+            Span::styled("  [p] alternar", Style::default().fg(theme::OVERLAY)),
+        ]),
+    ]).block(Block::default().borders(Borders::ALL).border_type(BorderType::Rounded).title("Projeto"));
     f.render_widget(left, header[0]);
 
     let tabs = Tabs::new(titles)
@@ -75,19 +90,23 @@ fn draw_header(f: &mut Frame, area: Rect, state: &AppState) {
 }
 
 fn draw_body(f: &mut Frame, area: Rect, state: &AppState) {
-    if state.view != View::ClusterFinOps {
-        let msg = match state.view {
-            View::ComposeStacks => "Compose Stacks: visão consolidada em evolução. Use [1] para Cluster & FinOps.",
-            View::BridgesPlugins => "Bridges & Plugins: integrações planejadas. Use [1] para Cluster & FinOps.",
-            _ => "",
-        };
-        let p = Paragraph::new(msg)
-            .wrap(Wrap { trim: true })
-            .style(Style::default().fg(theme::TEXT))
-            .block(Block::default().borders(Borders::ALL).border_type(BorderType::Rounded).title("View"));
-        f.render_widget(p, area);
-        return;
+    match state.view {
+        View::ClusterFinOps => draw_cluster(f, area, state),
+        View::ComposeStacks => stacks::draw(f, area, state),
+        View::BridgesPlugins => {
+            let msg = "Bridges & Plugins: integrações planejadas.\n\nUse [p] para alternar o produto em destaque (accounting/trivia), [4] para gerenciar .env e [5] para operações do stack.";
+            let p = Paragraph::new(msg)
+                .wrap(Wrap { trim: true })
+                .style(Style::default().fg(theme::TEXT))
+                .block(Block::default().borders(Borders::ALL).border_type(BorderType::Rounded).title("Bridges & Plugins"));
+            f.render_widget(p, area);
+        }
+        View::EnvLifecycle => envw::draw(f, area, state),
+        View::Operations => opsw::draw(f, area, state),
     }
+}
+
+fn draw_cluster(f: &mut Frame, area: Rect, state: &AppState) {
     let cols = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(32), Constraint::Percentage(68)])
@@ -111,7 +130,13 @@ fn draw_footer(f: &mut Frame, area: Rect, state: &AppState) {
     let text = match state.modal {
         Modal::AddNode(_) => "[Tab] Campo | [Enter] Confirmar | [Esc] Cancelar",
         Modal::DropNode { .. } => "[Tab/←/→] Selecionar | [Enter] Confirmar | [Esc/N] Cancelar",
-        Modal::None => "[Tab] Switch Pane | [↑/↓] Navigate | [1-4] Detail Tab | [a] Add Node | [d] Drop Node | [s] Simulate Load | [q] Quit",
+        Modal::None => match state.view {
+            View::ClusterFinOps => "[Tab] Painel | [↑/↓] Navegar | [1-4] Aba detalhe | [a] Add Nó | [d] Drop Nó | [s] Simular carga | [p] Produto | [1-5] Views | [q] Sair",
+            View::ComposeStacks => "[↑/↓] Rolar | [p] Produto | [1-5] Views | [q] Sair",
+            View::BridgesPlugins => "[p] Produto | [1-5] Views | [q] Sair",
+            View::EnvLifecycle => if state.env_editing { "[Enter] Salvar valor | [Esc] Cancelar edição | (digitando)" } else { "[↑/↓] Variável | [Enter] Editar | [g] Gerar de exemplo | [r] Recarregar | [w] Salvar .env | [p] Produto | [1-5] Views | [q] Sair" },
+            View::Operations => "[↑/↓/←/→] Ação | [Enter] Executar | [u] Up | [x] Down | [m] Migrar | [k] Status | [o] Logs | [p] Produto | [1-5] Views | [q] Sair",
+        },
     };
     let p = Paragraph::new(text)
         .style(Style::default().fg(theme::SUBTEXT))

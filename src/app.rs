@@ -1,9 +1,11 @@
 use std::collections::HashMap;
+use std::fs;
+use std::path::Path;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::action::{Action, Event};
-use crate::domain::{allocate_costs, Container, Node};
+use crate::domain::{allocate_costs, Container, EnvVar, Node, OpsStatus, Product, ProductEnv, StackState};
 use crate::telemetry::TelemetryProvider;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -11,6 +13,8 @@ pub enum View {
     ClusterFinOps,
     ComposeStacks,
     BridgesPlugins,
+    EnvLifecycle,
+    Operations,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -80,6 +84,13 @@ pub struct AppState {
     pub budget: f64,
     pub telemetry: Box<dyn TelemetryProvider + Send>,
     pub log_scroll: u16,
+    pub featured_product: Product,
+    pub env_states: HashMap<Product, ProductEnv>,
+    pub env_selected: usize,
+    pub env_editing: bool,
+    pub env_input: String,
+    pub ops_states: HashMap<Product, OpsStatus>,
+    pub ops_selected_action: usize,
 }
 
 impl AppState {
@@ -136,6 +147,13 @@ impl AppState {
             Container { id: "c5".into(), name: "postgres".into(), node_id: "n2".into(), stack: "accounting".into(), cpu_share_pct: 18.0, ram_share_pct: 26.0, status: "running".into(), logs: vec!["[boot] db ready".into()] },
             Container { id: "c6".into(), name: "redis".into(), node_id: "n2".into(), stack: "accounting".into(), cpu_share_pct: 8.0, ram_share_pct: 10.0, status: "running".into(), logs: vec!["[boot] cache warm".into()] },
         ];
+        let mut env_states = HashMap::new();
+        env_states.insert(Product::Accounting, load_env_state(Product::Accounting));
+        env_states.insert(Product::Trivia, load_env_state(Product::Trivia));
+        let mut ops_states = HashMap::new();
+        ops_states.insert(Product::Accounting, OpsStatus { product: Product::Accounting, state: StackState::Running, last_action: "status ok (mock)".into(), log_lines: vec!["[accounting] stack saudável".into()] });
+        ops_states.insert(Product::Trivia, OpsStatus { product: Product::Trivia, state: StackState::Running, last_action: "status ok (mock)".into(), log_lines: vec!["[trivia] stack saudável".into()] });
+
         Self {
             should_quit: false,
             view: View::ClusterFinOps,
@@ -149,6 +167,13 @@ impl AppState {
             budget: 100.0,
             telemetry,
             log_scroll: 0,
+            featured_product: Product::Accounting,
+            env_states,
+            env_selected: 0,
+            env_editing: false,
+            env_input: String::new(),
+            ops_states,
+            ops_selected_action: 0,
         }
     }
 
@@ -177,14 +202,46 @@ impl AppState {
         allocate_costs(&self.nodes, &self.containers).into_iter().collect()
     }
 
+    pub fn current_env(&self) -> Option<&ProductEnv> {
+        self.env_states.get(&self.featured_product)
+    }
+
+    pub fn current_env_mut(&mut self) -> Option<&mut ProductEnv> {
+        self.env_states.get_mut(&self.featured_product)
+    }
+
+    pub fn current_ops(&self) -> Option<&OpsStatus> {
+        self.ops_states.get(&self.featured_product)
+    }
+
     pub fn handle_event(&mut self, event: Event) -> Option<Action> {
         match event {
             Event::Tick => {
                 self.telemetry.tick(&mut self.nodes, &mut self.containers);
+                self.tick_ops_sim();
                 None
             }
             Event::Resize => None,
             Event::Key(key) => self.handle_key(key),
+        }
+    }
+
+    fn tick_ops_sim(&mut self) {
+        for ops in self.ops_states.values_mut() {
+            match ops.state {
+                StackState::Starting => {
+                    ops.state = StackState::Running;
+                    ops.last_action = "inicialização concluída (simulada)".into();
+                    ops.log_lines.push("[ops] serviços prontos".into());
+                }
+                StackState::Stopping => {
+                    ops.state = StackState::Stopped;
+                    ops.last_action = "parada concluída (simulada)".into();
+                    ops.log_lines.push("[ops] stack parado".into());
+                }
+                _ => {}
+            }
+            if ops.log_lines.len() > 80 { let drain = ops.log_lines.len()-80; ops.log_lines.drain(0..drain); }
         }
     }
 
@@ -198,89 +255,103 @@ impl AppState {
         if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
             return Some(Action::Quit);
         }
+
+        // global product switch and view keys (when not editing env value)
+        if self.view == View::EnvLifecycle && self.env_editing {
+            return self.handle_env_edit_key(key);
+        }
+
         match key.code {
             KeyCode::Char('q') => Some(Action::Quit),
+            KeyCode::Char('p') => { self.featured_product = self.featured_product.toggle(); self.clamp_env_selection(); None }
             KeyCode::Char('1') => {
-                if self.focus == FocusPane::Detail {
-                    self.detail_tab = DetailTab::Logs;
-                } else {
-                    self.view = View::ClusterFinOps;
-                }
+                if self.view == View::ClusterFinOps && self.focus == FocusPane::Detail { self.detail_tab = DetailTab::Logs; }
+                else { self.view = View::ClusterFinOps; }
                 None
             }
             KeyCode::Char('2') => {
-                if self.focus == FocusPane::Detail {
-                    self.detail_tab = DetailTab::CostBreakdown;
-                } else {
-                    self.view = View::ComposeStacks;
-                }
+                if self.view == View::ClusterFinOps && self.focus == FocusPane::Detail { self.detail_tab = DetailTab::CostBreakdown; }
+                else { self.view = View::ComposeStacks; }
                 None
             }
             KeyCode::Char('3') => {
-                if self.focus == FocusPane::Detail {
-                    self.detail_tab = DetailTab::ComposeYaml;
-                } else {
-                    self.view = View::BridgesPlugins;
-                }
+                if self.view == View::ClusterFinOps && self.focus == FocusPane::Detail { self.detail_tab = DetailTab::ComposeYaml; }
+                else { self.view = View::BridgesPlugins; }
                 None
             }
             KeyCode::Char('4') => {
-                if self.focus == FocusPane::Detail {
-                    self.detail_tab = DetailTab::Forecast7d;
+                if self.view == View::ClusterFinOps && self.focus == FocusPane::Detail { self.detail_tab = DetailTab::Forecast7d; }
+                else { self.view = View::EnvLifecycle; }
+                None
+            }
+            KeyCode::Char('5') => { self.view = View::Operations; None }
+            KeyCode::Tab => {
+                if self.view == View::ClusterFinOps {
+                    self.focus = match self.focus {
+                        FocusPane::Nodes => FocusPane::Containers,
+                        FocusPane::Containers => FocusPane::Detail,
+                        FocusPane::Detail => FocusPane::Nodes,
+                    };
                 }
                 None
             }
-            KeyCode::Tab => {
-                self.focus = match self.focus {
-                    FocusPane::Nodes => FocusPane::Containers,
-                    FocusPane::Containers => FocusPane::Detail,
-                    FocusPane::Detail => FocusPane::Nodes,
-                };
-                None
-            }
-            KeyCode::Char('l') if self.focus == FocusPane::Detail => { self.detail_tab = DetailTab::Logs; None }
-            KeyCode::Char('b') if self.focus == FocusPane::Detail => { self.detail_tab = DetailTab::CostBreakdown; None }
-            KeyCode::Char('y') if self.focus == FocusPane::Detail => { self.detail_tab = DetailTab::ComposeYaml; None }
-            KeyCode::Char('f') if self.focus == FocusPane::Detail => { self.detail_tab = DetailTab::Forecast7d; None }
+            KeyCode::Char('l') if self.view == View::ClusterFinOps && self.focus == FocusPane::Detail => { self.detail_tab = DetailTab::Logs; None }
+            KeyCode::Char('b') if self.view == View::ClusterFinOps && self.focus == FocusPane::Detail => { self.detail_tab = DetailTab::CostBreakdown; None }
+            KeyCode::Char('y') if self.view == View::ClusterFinOps && self.focus == FocusPane::Detail => { self.detail_tab = DetailTab::ComposeYaml; None }
+            KeyCode::Char('f') if self.view == View::ClusterFinOps && self.focus == FocusPane::Detail => { self.detail_tab = DetailTab::Forecast7d; None }
             KeyCode::Up => { self.move_up(); None }
             KeyCode::Down => { self.move_down(); None }
-            KeyCode::Char('a') => { self.modal = Modal::AddNode(AddNodeForm::default()); None }
-            KeyCode::Char('d') => {
-                if !self.nodes.is_empty() {
-                    self.modal = Modal::DropNode { confirm: false };
-                }
+            KeyCode::Enter if self.view == View::EnvLifecycle => { self.start_env_edit(); None }
+            KeyCode::Char('g') if self.view == View::EnvLifecycle => { self.generate_env_from_example(); None }
+            KeyCode::Char('r') if self.view == View::EnvLifecycle => { self.reload_env(); None }
+            KeyCode::Char('w') if self.view == View::EnvLifecycle => { self.save_env(); None }
+            KeyCode::Char('u') if self.view == View::Operations => { self.run_ops_action("up"); None }
+            KeyCode::Char('x') if self.view == View::Operations => { self.run_ops_action("down"); None }
+            KeyCode::Char('m') if self.view == View::Operations => { self.run_ops_action("migrate"); None }
+            KeyCode::Char('k') if self.view == View::Operations => { self.run_ops_action("status"); None }
+            KeyCode::Char('o') if self.view == View::Operations => { self.run_ops_action("logs"); None }
+            KeyCode::Left if self.view == View::Operations => { self.ops_selected_action = self.ops_selected_action.saturating_sub(1); None }
+            KeyCode::Right if self.view == View::Operations => { if self.ops_selected_action < 4 { self.ops_selected_action += 1; } None }
+            KeyCode::Enter if self.view == View::Operations => { self.run_selected_ops_action(); None }
+            KeyCode::Char('a') if self.view == View::ClusterFinOps => { self.modal = Modal::AddNode(AddNodeForm::default()); None }
+            KeyCode::Char('d') if self.view == View::ClusterFinOps => {
+                if !self.nodes.is_empty() { self.modal = Modal::DropNode { confirm: false }; }
                 None
             }
-            KeyCode::Char('s') => { self.simulate_load(); None }
+            KeyCode::Char('s') if self.view == View::ClusterFinOps => { self.simulate_load(); None }
             _ => None,
         }
     }
 
     fn move_up(&mut self) {
-        match self.focus {
-            FocusPane::Nodes => {
-                if self.selected_node > 0 { self.selected_node -= 1; self.selected_container = 0; }
-            }
-            FocusPane::Containers => {
-                if self.selected_container > 0 { self.selected_container -= 1; }
-            }
-            FocusPane::Detail => {
-                self.log_scroll = self.log_scroll.saturating_sub(1);
-            }
+        match self.view {
+            View::ClusterFinOps => match self.focus {
+                FocusPane::Nodes => { if self.selected_node > 0 { self.selected_node -= 1; self.selected_container = 0; } }
+                FocusPane::Containers => { if self.selected_container > 0 { self.selected_container -= 1; } }
+                FocusPane::Detail => { self.log_scroll = self.log_scroll.saturating_sub(1); }
+            },
+            View::EnvLifecycle => { if self.env_selected > 0 { self.env_selected -= 1; } }
+            View::Operations if self.ops_selected_action > 0 => { self.ops_selected_action -= 1; }
+            _ => {}
         }
     }
     fn move_down(&mut self) {
-        match self.focus {
-            FocusPane::Nodes => {
-                if self.selected_node + 1 < self.nodes.len() { self.selected_node += 1; self.selected_container = 0; }
+        match self.view {
+            View::ClusterFinOps => match self.focus {
+                FocusPane::Nodes => { if self.selected_node + 1 < self.nodes.len() { self.selected_node += 1; self.selected_container = 0; } }
+                FocusPane::Containers => {
+                    let len = self.containers_for_selected_node().len().saturating_add(1);
+                    if self.selected_container + 1 < len { self.selected_container += 1; }
+                }
+                FocusPane::Detail => { self.log_scroll = self.log_scroll.saturating_add(1); }
+            },
+            View::EnvLifecycle => {
+                if let Some(env) = self.current_env() {
+                    if self.env_selected + 1 < env.vars.len() { self.env_selected += 1; }
+                }
             }
-            FocusPane::Containers => {
-                let len = self.containers_for_selected_node().len().saturating_add(1); // +idle row
-                if self.selected_container + 1 < len { self.selected_container += 1; }
-            }
-            FocusPane::Detail => {
-                self.log_scroll = self.log_scroll.saturating_add(1);
-            }
+            View::Operations if self.ops_selected_action < 4 => { self.ops_selected_action += 1; }
+            _ => {}
         }
     }
 
@@ -291,6 +362,126 @@ impl AppState {
                 n.ram_pct = (n.ram_pct + 10.0).min(99.0);
             }
         }
+    }
+
+    fn clamp_env_selection(&mut self) {
+        if let Some(env) = self.current_env() {
+            if env.vars.is_empty() { self.env_selected = 0; }
+            else if self.env_selected >= env.vars.len() { self.env_selected = env.vars.len()-1; }
+        }
+    }
+
+    fn start_env_edit(&mut self) {
+        let (idx, val) = if let Some(env) = self.current_env() { (self.env_selected, env.vars.get(self.env_selected).map(|v| v.value.clone()).unwrap_or_default()) } else { return; };
+        self.env_selected = idx;
+        self.env_editing = true;
+        self.env_input = val;
+    }
+
+    fn handle_env_edit_key(&mut self, key: KeyEvent) -> Option<Action> {
+        match key.code {
+            KeyCode::Esc => { self.env_editing = false; self.env_input.clear(); }
+            KeyCode::Enter => {
+                let idx = self.env_selected;
+                let input = self.env_input.clone();
+                if let Some(env) = self.current_env_mut() {
+                    if let Some(var) = env.vars.get_mut(idx) {
+                        var.value = input;
+                        env.dirty = true;
+                        env.last_action = "valor atualizado (não salvo)".into();
+                    }
+                }
+                self.env_editing = false;
+                self.env_input.clear();
+            }
+            KeyCode::Backspace => { self.env_input.pop(); }
+            KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => { self.env_input.push(c); }
+            _ => {}
+        }
+        None
+    }
+
+    fn generate_env_from_example(&mut self) {
+        let product = self.featured_product;
+        let example = product_env_example_path(product);
+        let target = product_env_path(product);
+        let msg = match fs::read_to_string(&example) {
+            Ok(content) => {
+                let vars = parse_env_vars(&content);
+                if let Some(env) = self.env_states.get_mut(&product) {
+                    env.vars = vars;
+                    env.dirty = true;
+                    env.last_action = format!("gerado a partir de {} (não salvo)", example);
+                    env.path_hint = target;
+                }
+                "gerado".into()
+            }
+            Err(e) => format!("falha ao ler exemplo: {e}"),
+        };
+        if let Some(env) = self.env_states.get_mut(&product) {
+            if !msg.starts_with("falha") { /* ok */ } else { env.last_action = msg; }
+        }
+    }
+
+    fn reload_env(&mut self) {
+        let product = self.featured_product;
+        let loaded = load_env_state(product);
+        self.env_states.insert(product, loaded);
+        self.clamp_env_selection();
+    }
+
+    fn save_env(&mut self) {
+        let product = self.featured_product;
+        let path = product_env_path(product);
+        let (content, can_save) = if let Some(env) = self.current_env() {
+            (render_env_file(&env.vars), true)
+        } else { (String::new(), false) };
+        if !can_save { return; }
+        let result = fs::write(&path, content);
+        if let Some(env) = self.current_env_mut() {
+            match result {
+                Ok(_) => { env.dirty = false; env.last_action = format!("salvo em {path}"); }
+                Err(e) => { env.last_action = format!("erro ao salvar: {e}"); }
+            }
+        }
+    }
+
+    fn run_ops_action(&mut self, action: &str) {
+        let product = self.featured_product;
+        let label = product.label().to_string();
+        if let Some(ops) = self.ops_states.get_mut(&product) {
+            match action {
+                "up" => {
+                    ops.state = StackState::Starting;
+                    ops.last_action = "subindo stack (simulado)".into();
+                    ops.log_lines.push(format!("[ops] common/dc.sh {label} up -d (simulado)"));
+                }
+                "down" => {
+                    ops.state = StackState::Stopping;
+                    ops.last_action = "parando stack (simulado)".into();
+                    ops.log_lines.push(format!("[ops] common/dc.sh {label} down (simulado)"));
+                }
+                "migrate" => {
+                    ops.last_action = "migração solicitada (simulada)".into();
+                    ops.log_lines.push(format!("[ops] common/dc.sh {label} run --rm ops bench --site <SITE> migrate (simulado)"));
+                }
+                "status" => {
+                    ops.last_action = "status atualizado (simulado)".into();
+                    ops.log_lines.push(format!("[ops] estado atual: {}", ops.state.label()));
+                }
+                "logs" => {
+                    ops.last_action = "logs consultados (simulado)".into();
+                    ops.log_lines.push(format!("[ops] common/dc.sh {label} logs --tail=50 (simulado)"));
+                }
+                _ => {}
+            }
+            if ops.log_lines.len() > 80 { let drain = ops.log_lines.len()-80; ops.log_lines.drain(0..drain); }
+        }
+    }
+
+    fn run_selected_ops_action(&mut self) {
+        let action = match self.ops_selected_action { 0 => "up", 1 => "down", 2 => "migrate", 3 => "status", _ => "logs" };
+        self.run_ops_action(action);
     }
 
     fn handle_add_node_key(&mut self, key: KeyEvent) -> Option<Action> {
@@ -306,10 +497,7 @@ impl AppState {
                     AddField::Cost => AddField::Name,
                 };
             }
-            KeyCode::Backspace => {
-                let s = Self::active_field_mut(form);
-                s.pop();
-            }
+            KeyCode::Backspace => { Self::active_field_mut(form).pop(); }
             KeyCode::Enter => {
                 if let Ok(cost) = form.cost.trim().parse::<f64>() {
                     let idx = self.nodes.len() + 1;
@@ -317,7 +505,7 @@ impl AppState {
                     let region = "custom".to_string();
                     self.nodes.push(Node {
                         id: format!("n{idx}"),
-                        name: name.clone(),
+                        name,
                         region,
                         host: form.host.trim().to_string(),
                         ssh_user: form.user.trim().to_string(),
@@ -337,7 +525,6 @@ impl AppState {
             KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                 Self::active_field_mut(form).push(c);
             }
-            KeyCode::Char(_) => {}
             _ => {}
         }
         None
@@ -375,9 +562,7 @@ impl AppState {
                 }
                 self.modal = Modal::None;
             }
-            KeyCode::Char('y') => {
-                if let Modal::DropNode { ref mut confirm } = self.modal { *confirm = true; }
-            }
+            KeyCode::Char('y') => { if let Modal::DropNode { ref mut confirm } = self.modal { *confirm = true; } }
             _ => {}
         }
         None
@@ -393,4 +578,72 @@ impl AppState {
         if y == "version: \"3.9\"\nservices:\n" { y.push_str("  {}\n"); }
         y
     }
+
+    pub fn featured_compose_preview(&self) -> String {
+        let p = self.featured_product.label();
+        format!(
+            "# Stack: {p} (common/dc.sh {p} ...)\n# Compose base: common/compose.base.yaml\n# Env: products/{p}/.env\n\ninclude/base services:\n  - configurator\n  - backend\n  - websocket\n  - queue-short\n  - queue-long\n  - scheduler\n  - frontend\n  - db\n  - redis-cache\n  - redis-queue\n  - cloudflared\n\nx-product:\n  name: {p}\n  ops:\n    up:      common/dc.sh {p} up -d\n    down:    common/dc.sh {p} down\n    logs:    common/dc.sh {p} logs -f\n    migrate: common/dc.sh {p} run --rm ops bench --site <SITE> migrate\n"
+        )
+    }
+}
+
+fn product_env_path(product: Product) -> String {
+    format!("products/{}/.env", product.label())
+}
+
+fn product_env_example_path(product: Product) -> String {
+    format!("products/{}/.env.example", product.label())
+}
+
+fn parse_env_vars(content: &str) -> Vec<EnvVar> {
+    let mut vars = Vec::new();
+    let mut pending_comment: Option<String> = None;
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            pending_comment = None;
+            continue;
+        }
+        if trimmed.starts_with('#') {
+            pending_comment = Some(trimmed.trim_start_matches('#').trim().to_string());
+            continue;
+        }
+        if let Some((k, v)) = line.split_once('=') {
+            vars.push(EnvVar { key: k.trim().to_string(), value: v.to_string(), comment: pending_comment.take() });
+        } else {
+            vars.push(EnvVar { key: line.to_string(), value: String::new(), comment: pending_comment.take() });
+        }
+    }
+    vars
+}
+
+fn render_env_file(vars: &[EnvVar]) -> String {
+    let mut out = String::new();
+    for v in vars {
+        if let Some(c) = &v.comment {
+            if !c.is_empty() { out.push_str(&format!("# {c}\n")); }
+        }
+        out.push_str(&format!("{}={}\n", v.key, v.value));
+    }
+    out
+}
+
+fn load_env_state(product: Product) -> ProductEnv {
+    let env_path = product_env_path(product);
+    let example_path = product_env_example_path(product);
+    let (path_hint, content, last_action) = if Path::new(&env_path).exists() {
+        match fs::read_to_string(&env_path) {
+            Ok(c) => (env_path.clone(), c, format!("carregado de {env_path}")),
+            Err(e) => (env_path.clone(), String::new(), format!("erro ao ler {env_path}: {e}")),
+        }
+    } else if Path::new(&example_path).exists() {
+        match fs::read_to_string(&example_path) {
+            Ok(c) => (env_path.clone(), c, format!("baseado em {example_path} (gere/salve .env)")),
+            Err(e) => (env_path.clone(), String::new(), format!("erro ao ler {example_path}: {e}")),
+        }
+    } else {
+        (env_path.clone(), String::new(), "nenhum .env/.env.example encontrado".into())
+    };
+    let vars = if content.is_empty() { Vec::new() } else { parse_env_vars(&content) };
+    ProductEnv { product, path_hint, vars, dirty: false, last_action }
 }
