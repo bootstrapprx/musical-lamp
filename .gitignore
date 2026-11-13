@@ -1,3 +1,1 @@
-.env
-.env.bak-*
-.env.kodoo-tmp
+/target

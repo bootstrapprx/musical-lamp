@@ -1,0 +1,53 @@
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Node {
+    pub id: String,
+    pub name: String,
+    pub region: String,
+    pub host: String,
+    pub ssh_user: String,
+    pub provider: String,
+    pub monthly_cost: f64,
+    pub online: bool,
+    pub cpu_pct: f64,
+    pub ram_pct: f64,
+    pub cpu_history: Vec<u64>,
+    pub ram_history: Vec<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Container {
+    pub id: String,
+    pub name: String,
+    pub node_id: String,
+    pub stack: String,
+    pub cpu_share_pct: f64,
+    pub ram_share_pct: f64,
+    pub status: String,
+    pub logs: Vec<String>,
+}
+
+impl Node {
+    pub fn display_name(&self) -> String {
+        format!("{} ({})", self.name, self.region)
+    }
+}
+
+pub fn allocate_costs(nodes: &[Node], containers: &[Container]) -> Vec<(String, f64)> {
+    // returns (container_id or special "__idle__:<node_id>", monthly_cost)
+    let mut out = Vec::new();
+    for node in nodes {
+        let node_containers: Vec<&Container> = containers.iter().filter(|c| c.node_id == node.id).collect();
+        let mut allocated = 0.0;
+        for c in &node_containers {
+            let share = (c.cpu_share_pct * 0.5 + c.ram_share_pct * 0.5).clamp(0.0, 100.0) / 100.0;
+            let cost = node.monthly_cost * share;
+            allocated += cost;
+            out.push((c.id.clone(), cost));
+        }
+        let idle = (node.monthly_cost - allocated).max(0.0);
+        out.push((format!("__idle__:{}", node.id), idle));
+    }
+    out
+}
