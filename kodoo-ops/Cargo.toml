@@ -1,0 +1,21 @@
+[package]
+name = "kodoo-ops"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+description = "Nucleo funcional (sem UI) para deploy e ciclo de vida do .env dos produtos Kodoo"
+
+[lib]
+name = "kodoo_ops"
+path = "src/lib.rs"
+
+[[bin]]
+name = "kodoo-ops"
+path = "src/main.rs"
+
+[dependencies]
+ratatui = { version = "0.28", features = ["crossterm"] }
+crossterm = "0.28"
+serde_json = "1"
+slt = { path = "slt" }
+getrandom = "0.2"
