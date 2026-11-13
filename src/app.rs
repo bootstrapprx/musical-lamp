@@ -971,10 +971,14 @@ impl AppState {
             KeyCode::Enter => {
                 let url = form.url.trim().to_string();
                 let branch = form.branch.trim().to_string();
-                if !url.is_empty() && !branch.is_empty() {
-                    let _ = self.add_app_entry(&url, &branch);
+                if url.is_empty() || branch.is_empty() {
+                    self.set_apps_status("informe a URL do repositório e a referência (tag/commit)".into());
+                    return None;
                 }
-                self.modal = Modal::None;
+                match self.add_app_entry(&url, &branch) {
+                    Ok(()) => { self.modal = Modal::None; }
+                    Err(e) => { self.set_apps_status(format!("não foi possível salvar apps.json: {e}")); }
+                }
             }
             KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                 match form.field { AppField::Url => form.url.push(c), AppField::Branch => form.branch.push(c) }
@@ -985,52 +989,76 @@ impl AppState {
     }
 
     pub fn apps_for_featured(&self) -> Vec<(String, String)> {
-        let path = Path::new("products").join(self.featured_product.label()).join("apps.json");
-        let Ok(text) = fs::read_to_string(path) else { return vec![]; };
-        let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else { return vec![]; };
-        v.as_array()
-            .map(|arr| {
-                arr.iter()
-                    .map(|a| {
-                        (
-                            a.get("url").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                            a.get("branch").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                        )
-                    })
-                    .collect()
-            })
-            .unwrap_or_default()
+        match self.load_apps_json() {
+            Ok(arr) => apps_from_json_array(&arr),
+            Err(_) => vec![],
+        }
     }
 
-    fn add_app_entry(&mut self, url: &str, branch: &str) -> std::io::Result<()> {
-        let path = Path::new("products").join(self.featured_product.label()).join("apps.json");
-        let mut arr: Vec<serde_json::Value> = if let Ok(text) = fs::read_to_string(&path) {
-            serde_json::from_str(&text).unwrap_or_else(|_| vec![])
-        } else { vec![] };
-        arr.push(serde_json::json!({"url": url, "branch": branch}));
-        let out = serde_json::to_string_pretty(&arr).unwrap_or_else(|_| "[]".into());
-        fs::write(path, out + "\n")?;
-        self.apps_selected = arr.len().saturating_sub(1);
+    pub fn apps_load_error(&self) -> Option<String> {
+        self.load_apps_json().err()
+    }
+
+    fn apps_json_path(&self) -> std::path::PathBuf {
+        Path::new("products").join(self.featured_product.label()).join("apps.json")
+    }
+
+    fn load_apps_json(&self) -> Result<Vec<serde_json::Value>, String> {
+        let path = self.apps_json_path();
+        let text = match fs::read_to_string(&path) {
+            Ok(t) => t,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(vec![]),
+            Err(e) => return Err(format!("falha ao ler {}: {e}", path.display())),
+        };
+        let v: serde_json::Value = serde_json::from_str(&text)
+            .map_err(|e| format!("apps.json inválido em {}: {e}", path.display()))?;
+        match v {
+            serde_json::Value::Array(arr) => Ok(arr),
+            _ => Err(format!("apps.json inválido em {}: esperado uma lista", path.display())),
+        }
+    }
+
+    fn write_apps_json(&self, path: &Path, arr: &[serde_json::Value]) -> Result<(), String> {
+        let out = serde_json::to_string_pretty(arr)
+            .map_err(|e| format!("falha ao preparar apps.json: {e}"))?;
+        fs::write(path, out + "\n")
+            .map_err(|e| format!("falha ao salvar {}: {e}", path.display()))
+    }
+
+    fn set_apps_status(&mut self, msg: String) {
         if let Some(ops) = self.ops_states.get_mut(&self.featured_product) {
-            ops.last_action = "aplicativo adicionado ao bench (apps.json)".into();
+            ops.last_action = msg.clone();
+            ops.log_lines.push(format!("[apps] {msg}"));
+        }
+    }
+
+    fn add_app_entry(&mut self, url: &str, branch: &str) -> Result<(), String> {
+        let path = self.apps_json_path();
+        let mut arr = self.load_apps_json()?;
+        arr.push(serde_json::json!({"url": url, "branch": branch}));
+        self.write_apps_json(&path, &arr)?;
+        self.apps_selected = arr.len().saturating_sub(1);
+        self.set_apps_status("aplicativo adicionado ao bench (apps.json)".into());
+        if let Some(ops) = self.ops_states.get_mut(&self.featured_product) {
             ops.log_lines.push(format!("[apps] repo={url} ref={branch}"));
         }
         Ok(())
     }
 
     fn remove_selected_app(&mut self) {
-        let path = Path::new("products").join(self.featured_product.label()).join("apps.json");
-        let mut arr: Vec<serde_json::Value> = if let Ok(text) = fs::read_to_string(&path) {
-            serde_json::from_str(&text).unwrap_or_else(|_| vec![])
-        } else { vec![] };
+        let path = self.apps_json_path();
+        let mut arr = match self.load_apps_json() {
+            Ok(a) => a,
+            Err(e) => { self.set_apps_status(format!("não foi possível remover: {e}")); return; }
+        };
         if arr.is_empty() || self.apps_selected >= arr.len() { return; }
         arr.remove(self.apps_selected);
         if self.apps_selected >= arr.len() && !arr.is_empty() { self.apps_selected = arr.len() - 1; }
-        let out = serde_json::to_string_pretty(&arr).unwrap_or_else(|_| "[]".into());
-        let _ = fs::write(path, out + "\n");
-        if let Some(ops) = self.ops_states.get_mut(&self.featured_product) {
-            ops.last_action = "aplicativo removido do bench (apps.json)".into();
+        if let Err(e) = self.write_apps_json(&path, &arr) {
+            self.set_apps_status(format!("não foi possível salvar remoção em apps.json: {e}"));
+            return;
         }
+        self.set_apps_status("aplicativo removido do bench (apps.json)".into());
     }
 
     pub fn build_hints(&self) -> String {
@@ -1149,6 +1177,17 @@ pub fn load_env_state(product: Product) -> ProductEnv {
 pub fn env_has_tunnel_token(product: Product) -> bool {
     let env = load_env_state(product);
     env.vars.iter().find(|v| v.key == "TUNNEL_TOKEN").map(|v| !v.value.trim().is_empty()).unwrap_or(false)
+}
+
+fn apps_from_json_array(arr: &[serde_json::Value]) -> Vec<(String, String)> {
+    arr.iter()
+        .map(|a| {
+            (
+                a.get("url").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+                a.get("branch").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+            )
+        })
+        .collect()
 }
 
 // (token editing is available through the .env lifecycle view)

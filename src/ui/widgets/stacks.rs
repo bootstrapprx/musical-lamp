@@ -88,8 +88,15 @@ fn draw_overview(f: &mut Frame, area: Rect, state: &AppState) {
 fn draw_apps(f: &mut Frame, area: Rect, state: &AppState) {
     let cols = Layout::default().direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(55), Constraint::Percentage(45)]).split(area);
+    let apps_err = state.apps_load_error();
     let apps = state.apps_for_featured();
-    let items: Vec<ListItem> = if apps.is_empty() {
+    let items: Vec<ListItem> = if let Some(err) = &apps_err {
+        vec![
+            ListItem::new(Line::from(Span::styled("Não foi possível ler apps.json", Style::default().fg(theme::RED).add_modifier(Modifier::BOLD)))),
+            ListItem::new(Line::from(Span::styled(err.clone(), Style::default().fg(theme::YELLOW)))),
+            ListItem::new(Line::from(Span::styled("O arquivo foi preservado. Corrija o JSON antes de adicionar ou remover apps.", Style::default().fg(theme::SUBTEXT)))),
+        ]
+    } else if apps.is_empty() {
         vec![ListItem::new(Line::from(Span::styled("Nenhum app listado em apps.json", Style::default().fg(theme::SUBTEXT))))]
     } else {
         apps.iter().enumerate().map(|(i, (url, branch))| {
@@ -107,16 +114,25 @@ fn draw_apps(f: &mut Frame, area: Rect, state: &AppState) {
     );
     f.render_widget(list, cols[0]);
 
-    let hints = vec![
+    let mut hints = vec![
         Line::from(Span::styled("Contexto para adicionar apps no bench", Style::default().fg(theme::MAUVE).add_modifier(Modifier::BOLD))),
         Line::from(""),
         Line::from("• Cada app precisa de um repositório Git (URL) e de uma referência fixa (tag ou commit)."),
         Line::from("• Evite branches móveis (main/master/develop) para builds reprodutíveis."),
         Line::from("• O bench usa esses dados para instalar os apps no site/produto."),
         Line::from(""),
-        Line::from(Span::styled("Build do produto:", Style::default().fg(theme::TEAL))),
-        Line::from(state.build_hints()),
     ];
+    if let Some(ops) = state.current_ops() {
+        if !ops.last_action.is_empty() {
+            hints.push(Line::from(vec![
+                Span::styled("Última ação: ", Style::default().fg(theme::SUBTEXT)),
+                Span::styled(ops.last_action.clone(), Style::default().fg(theme::PEACH)),
+            ]));
+            hints.push(Line::from(""));
+        }
+    }
+    hints.push(Line::from(Span::styled("Build do produto:", Style::default().fg(theme::TEAL))));
+    hints.push(Line::from(state.build_hints()));
     let p = Paragraph::new(hints).wrap(Wrap { trim: true }).block(
         Block::default().borders(Borders::ALL).border_type(BorderType::Rounded).title("Ajuda e build.env"),
     );

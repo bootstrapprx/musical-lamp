@@ -12,9 +12,10 @@ use crate::ui::widgets::{containers, env as envw, finops, modals, nodes, stacks}
 
 pub fn draw(f: &mut Frame, state: &AppState) {
     let size = f.area();
-    if size.width < 50 || size.height < 14 {
-        let msg = Paragraph::new("Terminal muito pequeno. Aumente a janela para usar a TUI.")
+    if size.width < 50 || size.height < 18 {
+        let msg = Paragraph::new("Terminal muito pequeno. Aumente a janela (mínimo 50x18) para usar a TUI.")
             .style(Style::default().fg(theme::YELLOW))
+            .wrap(Wrap { trim: true })
             .block(
                 Block::default()
                     .borders(Borders::ALL)

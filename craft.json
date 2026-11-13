@@ -9,7 +9,7 @@
   "status": "ready",
   "note": "Ready: all 2 checks pass. 1 question about the original is still open.",
   "created_ms": 1794595666281,
-  "updated_ms": 1794607073390,
+  "updated_ms": 1794607919857,
   "checks": [
     {
       "round": 1,
@@ -136,12 +136,30 @@
       "note": "`cargo test --quiet` passed.",
       "artifacts": [],
       "at_ms": 1794607073382
+    },
+    {
+      "round": 8,
+      "check": "build",
+      "passed": true,
+      "similarity": null,
+      "note": "`cargo build --quiet` passed.",
+      "artifacts": [],
+      "at_ms": 1794607919415
+    },
+    {
+      "round": 8,
+      "check": "own-tests",
+      "passed": true,
+      "similarity": null,
+      "note": "`cargo test --quiet` passed.",
+      "artifacts": [],
+      "at_ms": 1794607919852
     }
   ],
   "agent_session": null,
   "agent_session_by": "opencode",
   "allowed_actions": [],
-  "last_reply": "Refiz a interface do terminal para acompanhar vários servidores e pilhas de aplicativos, com visão de uso, custos e projeções em tempo real simulada, além das telas e janelas pedidas para adicionar ou remover servidores e ver detalhes como registros, composição e previsão.\nAs operações de subir, parar, consultar, checagem prévia e configuração inicial agora trazem mais contexto: campos sensíveis podem ter segredos gerados, cada dado mostra que tipo de informação espera (como endereço, caminho ou versão) e dá para cadastrar os aplicativos do conjunto indicando o repositório e a referência necessários.\nPor segurança, essas ações de infraestrutura são simuladas e não executam mudanças reais nos servidores; tokens emitidos por serviços externos (como o túnel) podem precisar ser colados com o valor real, e não consegui ver as imagens anexadas, então segui pelo que você descreveu.\nAinda pode diferir do que você imaginou em detalhes visuais finos que dependiam dessas imagens.\nUm bom próximo passo seria pedir para conectar essas operações simuladas à execução real no servidor e aos dados reais dos contêineres.",
+  "last_reply": "Corrigi o cadastro de aplicativos do bench para que ele não apague nem sobrescreva a lista quando o arquivo de apps estiver inválido ou não puder ser lido: nesses casos o arquivo é preservado, a tela avisa o problema e a adição ou remoção só acontece se a leitura e a gravação concluírem com sucesso, mostrando falhas quando não for possível salvar. Ajustei também as janelas de adicionar/remover nó e de cadastrar app para se adaptarem melhor a terminais menores e aumentei o tamanho mínimo aceito da tela, evitando que campos e instruções fiquem cortados em alturas reduzidas.\n\nO restante da interface e as operações de stack continuam no estado atual do projeto (operações simuladas, sem integração real de execução remota nesta mudança). Ainda vale conferir em uso real se os textos dos avisos ficam claros no fluxo do dia a dia. Um bom próximo passo é pedir a conexão das ações de stack e da telemetria a provedores reais de Docker/SSH, mantendo a simulação como alternativa quando não houver acesso.",
   "asset_budget_usd": 5.0,
   "generate_assets": false,
   "app_in_root": true,
