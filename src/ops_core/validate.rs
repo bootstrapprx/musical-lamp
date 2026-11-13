@@ -1,7 +1,6 @@
-//! Validacao de .env, build.env e apps.json. Tudo puro: nao executa nada.
-use crate::envfile::EnvFile;
-use crate::product::Paths;
+use crate::ops_core::envfile::EnvFile;
 use std::fs;
+use std::path::Path;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Severity {
@@ -27,12 +26,7 @@ impl Finding {
     }
 }
 
-pub fn has_errors(f: &[Finding]) -> bool {
-    f.iter().any(|x| x.severity == Severity::Error)
-}
-
-// ---- IPv4 / CIDR ------------------------------------------------------------
-pub(crate) fn parse_ipv4(s: &str) -> Option<u32> {
+fn parse_ipv4(s: &str) -> Option<u32> {
     let parts: Vec<&str> = s.trim().split('.').collect();
     if parts.len() != 4 {
         return None;
@@ -44,14 +38,12 @@ pub(crate) fn parse_ipv4(s: &str) -> Option<u32> {
     }
     Some(v)
 }
-
-pub(crate) fn parse_cidr(s: &str) -> Option<(u32, u8)> {
+fn parse_cidr(s: &str) -> Option<(u32, u8)> {
     let (a, b) = s.trim().split_once('/')?;
     let ip = parse_ipv4(a)?;
     let p: u8 = b.parse().ok()?;
     (p <= 32).then_some((ip, p))
 }
-
 fn mask(p: u8) -> u32 {
     if p == 0 {
         0
@@ -83,27 +75,20 @@ const REQUIRED: &[&str] = &[
     "CLOUDFLARED_IP",
 ];
 
-/// Valida o .env de um produto. `other` = .env do outro produto (checa colisao de sub-rede).
-pub fn validate_env(
-    env: &EnvFile,
-    env_path: &std::path::Path,
-    other: Option<&EnvFile>,
-) -> Vec<Finding> {
+pub fn validate_env(env: &EnvFile, env_path: &Path, other: Option<&EnvFile>) -> Vec<Finding> {
     use Severity::*;
     let mut f = Vec::new();
-
     for k in REQUIRED {
         if env.is_blank(k) {
-            f.push(Finding::new(Error, Some(k), format!("{k} esta vazio")));
+            f.push(Finding::new(Error, Some(k), format!("{k} está vazio")));
         }
     }
-
     if let Some(v) = env.get("IMAGE_REF").filter(|v| !v.is_empty()) {
         if v.contains("RELEASE") {
             f.push(Finding::new(
                 Error,
                 Some("IMAGE_REF"),
-                "ainda e o placeholder RELEASE",
+                "ainda é placeholder RELEASE",
             ));
         } else if let Some((_, d)) = v.split_once("@sha256:") {
             if d.len() != 64 || !d.chars().all(|c| c.is_ascii_hexdigit()) {
@@ -127,12 +112,11 @@ pub fn validate_env(
                 Some(_) => f.push(Finding::new(
                     Warn,
                     Some("IMAGE_REF"),
-                    "em producao promova pelo digest (@sha256:...)",
+                    "em produção prefira digest @sha256:...",
                 )),
             }
         }
     }
-
     if let Some(v) = env.get("DB_PASSWORD").filter(|v| !v.is_empty()) {
         if v.chars().count() < 24 {
             f.push(Finding::new(
@@ -142,17 +126,15 @@ pub fn validate_env(
             ));
         }
     }
-
     if let Some(v) = env.get("CLOUDFLARED_VERSION").filter(|v| !v.is_empty()) {
         if v == "latest" {
             f.push(Finding::new(
                 Error,
                 Some("CLOUDFLARED_VERSION"),
-                "fixe uma tag; latest nao e reprodutivel",
+                "fixe uma tag; latest não é reprodutível",
             ));
         }
     }
-
     if let Some(v) = env.get("TUNNEL_TOKEN").filter(|v| !v.is_empty()) {
         let ok = v.len() >= 50
             && v.chars()
@@ -161,39 +143,36 @@ pub fn validate_env(
             f.push(Finding::new(
                 Warn,
                 Some("TUNNEL_TOKEN"),
-                "formato incomum para token de tunnel (base64 longo)",
+                "formato incomum para token de túnel",
             ));
         }
     }
-
-    // ---- rede de borda ----------------------------------------------------------
     let subnet = env.get("EDGE_SUBNET").and_then(parse_cidr);
     let range = env.get("EDGE_IP_RANGE").and_then(parse_cidr);
     let cf_ip = env.get("CLOUDFLARED_IP").and_then(parse_ipv4);
-
     if !env.is_blank("EDGE_SUBNET") && subnet.is_none() {
         f.push(Finding::new(
             Error,
             Some("EDGE_SUBNET"),
-            "CIDR IPv4 invalido",
+            "CIDR IPv4 inválido",
         ));
     }
     if !env.is_blank("EDGE_IP_RANGE") && range.is_none() {
         f.push(Finding::new(
             Error,
             Some("EDGE_IP_RANGE"),
-            "CIDR IPv4 invalido",
+            "CIDR IPv4 inválido",
         ));
     }
     if !env.is_blank("CLOUDFLARED_IP") && cf_ip.is_none() {
-        f.push(Finding::new(Error, Some("CLOUDFLARED_IP"), "IPv4 invalido"));
+        f.push(Finding::new(Error, Some("CLOUDFLARED_IP"), "IPv4 inválido"));
     }
     if let Some(s) = subnet {
         if network(s.0, s.1) != s.0 {
             f.push(Finding::new(
                 Warn,
                 Some("EDGE_SUBNET"),
-                "bits de host preenchidos; use o endereco de rede",
+                "bits de host preenchidos; use o endereço de rede",
             ));
         }
         if let Some(r) = range {
@@ -217,13 +196,13 @@ pub fn validate_env(
                 f.push(Finding::new(
                     Error,
                     Some("CLOUDFLARED_IP"),
-                    "endereco de rede/broadcast",
+                    "endereço de rede/broadcast",
                 ));
             } else if ip == net + 1 {
                 f.push(Finding::new(
                     Error,
                     Some("CLOUDFLARED_IP"),
-                    "e o gateway do Docker (primeiro IP util)",
+                    "é o gateway do Docker (primeiro IP útil)",
                 ));
             }
             if let Some(r) = range {
@@ -231,7 +210,7 @@ pub fn validate_env(
                     f.push(Finding::new(
                         Error,
                         Some("CLOUDFLARED_IP"),
-                        "esta dentro de EDGE_IP_RANGE: o frontend poderia receber esse IP antes do cloudflared",
+                        "dentro de EDGE_IP_RANGE: conflito com frontend",
                     ));
                 }
             }
@@ -249,7 +228,6 @@ pub fn validate_env(
             }
         }
     }
-
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -258,18 +236,16 @@ pub fn validate_env(
                 f.push(Finding::new(
                     Warn,
                     None,
-                    ".env legivel por grupo/outros; rode chmod 600",
+                    ".env legível por grupo/outros; recomendado chmod 600",
                 ));
             }
         }
     }
     #[cfg(not(unix))]
     let _ = env_path;
-
     f
 }
 
-/// Diferenca entre o .env e o .env.example (chaves novas/obsoletas).
 pub fn drift(env: &EnvFile, example: &EnvFile) -> Vec<Finding> {
     let mut f = Vec::new();
     for k in example.keys() {
@@ -286,19 +262,19 @@ pub fn drift(env: &EnvFile, example: &EnvFile) -> Vec<Finding> {
             f.push(Finding::new(
                 Severity::Info,
                 Some(k),
-                "nao existe no .env.example (obsoleta ou local)",
+                "não existe no .env.example (obsoleta/local)",
             ));
         }
     }
     f
 }
 
-/// Pre-requisitos de build: build.env + apps.json.
-pub fn validate_build(paths: &Paths) -> Vec<Finding> {
+pub fn validate_build(product_dir: &Path) -> Vec<Finding> {
     use Severity::*;
     let mut f = Vec::new();
-
-    match EnvFile::load(&paths.build_env()) {
+    let build_env = product_dir.join("build.env");
+    let apps_json = product_dir.join("apps.json");
+    match EnvFile::load(&build_env) {
         Ok(b) => {
             match b.get("FRAPPE_REF").filter(|v| !v.is_empty()) {
                 None => f.push(Finding::new(
@@ -312,7 +288,7 @@ pub fn validate_build(paths: &Paths) -> Vec<Finding> {
                     f.push(Finding::new(
                         Error,
                         Some("FRAPPE_REF"),
-                        "branch movel; use tag ou commit",
+                        "branch móvel; use tag ou commit",
                     ))
                 }
                 Some(_) => {}
@@ -321,16 +297,15 @@ pub fn validate_build(paths: &Paths) -> Vec<Finding> {
                 f.push(Finding::new(Error, Some("IMAGE"), "vazio em build.env"));
             }
         }
-        Err(e) => f.push(Finding::new(Error, None, format!("build.env: {e}"))),
+        Err(e) => f.push(Finding::new(Info, None, format!("build.env: {e}"))),
     }
-
-    match fs::read_to_string(paths.apps_json()) {
-        Err(e) => f.push(Finding::new(Error, None, format!("apps.json: {e}"))),
+    match fs::read_to_string(&apps_json) {
+        Err(e) => f.push(Finding::new(Info, None, format!("apps.json: {e}"))),
         Ok(text) => match serde_json::from_str::<serde_json::Value>(&text) {
             Err(e) => f.push(Finding::new(
                 Error,
                 None,
-                format!("apps.json invalido: {e}"),
+                format!("apps.json inválido: {e}"),
             )),
             Ok(v) => match v.as_array() {
                 None => f.push(Finding::new(Error, None, "apps.json deve ser uma lista")),
@@ -338,12 +313,27 @@ pub fn validate_build(paths: &Paths) -> Vec<Finding> {
                     for (i, a) in apps.iter().enumerate() {
                         for field in ["url", "branch"] {
                             match a.get(field).and_then(|x| x.as_str()) {
-                                None => f.push(Finding::new(Error, None, format!("apps.json[{i}]: falta {field}"))),
+                                None => f.push(Finding::new(
+                                    Error,
+                                    None,
+                                    format!("apps.json[{i}]: falta {field}"),
+                                )),
                                 Some(s) if s.contains('<') || s.contains('>') => {
-                                    f.push(Finding::new(Error, None, format!("apps.json[{i}].{field}: placeholder {s}")))
+                                    f.push(Finding::new(
+                                        Error,
+                                        None,
+                                        format!("apps.json[{i}].{field}: placeholder {s}"),
+                                    ))
                                 }
-                                Some(s) if field == "branch" && matches!(s, "main" | "master" | "develop") => {
-                                    f.push(Finding::new(Warn, None, format!("apps.json[{i}].branch: {s} e movel; prefira tag/commit")))
+                                Some(s)
+                                    if field == "branch"
+                                        && matches!(s, "main" | "master" | "develop") =>
+                                {
+                                    f.push(Finding::new(
+                                        Warn,
+                                        None,
+                                        format!("apps.json[{i}].branch: {s} é móvel"),
+                                    ))
                                 }
                                 Some(_) => {}
                             }

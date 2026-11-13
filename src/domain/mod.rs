@@ -70,6 +70,8 @@ pub struct ProductEnv {
     pub vars: Vec<EnvVar>,
     pub dirty: bool,
     pub last_action: String,
+    pub reveal_secrets: bool,
+    pub findings: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -105,7 +107,8 @@ pub fn allocate_costs(nodes: &[Node], containers: &[Container]) -> Vec<(String, 
     // returns (container_id or special "__idle__:<node_id>", monthly_cost)
     let mut out = Vec::new();
     for node in nodes {
-        let node_containers: Vec<&Container> = containers.iter().filter(|c| c.node_id == node.id).collect();
+        let node_containers: Vec<&Container> =
+            containers.iter().filter(|c| c.node_id == node.id).collect();
         let mut allocated = 0.0;
         for c in &node_containers {
             let share = (c.cpu_share_pct * 0.5 + c.ram_share_pct * 0.5).clamp(0.0, 100.0) / 100.0;

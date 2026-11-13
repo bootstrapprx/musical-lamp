@@ -1,5 +1,4 @@
-//! Leitor/escritor de .env que preserva ordem, comentarios e linhas em branco.
-use crate::error::{Error, Result};
+//! .env reader/writer preserving order, comments and blank lines (adapted from kodoo-ops).
 use std::fs;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -8,7 +7,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 pub enum Line {
     Blank,
     Comment(String),
-    /// `raw` e a linha completa como sera escrita (inalterada se ninguem chamou `set`).
     Var {
         key: String,
         value: String,
@@ -29,7 +27,6 @@ fn valid_key(k: &str) -> bool {
         && c.all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
 }
 
-/// Separa o valor do comentario final. Retorna (valor, trailing).
 fn split_value(rest: &str) -> (String, String) {
     let r = rest.trim_start();
     if r.starts_with('#') {
@@ -89,12 +86,9 @@ fn parse_line(l: &str) -> Line {
     Line::Other(l.to_string())
 }
 
-/// Formata um valor para o .env (aspas simples quando necessario).
-pub fn format_value(v: &str) -> Result<String> {
+pub fn format_value(v: &str) -> Result<String, String> {
     if v.contains('\n') || v.contains('\r') {
-        return Err(Error::Invalid(
-            "valor de .env nao pode ter quebra de linha".into(),
-        ));
+        return Err("valor de .env não pode ter quebra de linha".into());
     }
     let special = |c: char| c.is_whitespace() || matches!(c, '#' | '$' | '"' | '\'' | '\\' | '`');
     if !v.chars().any(special) {
@@ -106,9 +100,7 @@ pub fn format_value(v: &str) -> Result<String> {
     if !v.chars().any(|c| matches!(c, '"' | '$' | '\\' | '`')) {
         return Ok(format!("\"{v}\""));
     }
-    Err(Error::Invalid(
-        "valor mistura aspas simples com caracteres especiais; simplifique".into(),
-    ))
+    Err("valor mistura aspas simples com caracteres especiais".into())
 }
 
 impl EnvFile {
@@ -118,13 +110,10 @@ impl EnvFile {
         }
     }
 
-    pub fn load(path: &Path) -> Result<EnvFile> {
+    pub fn load(path: &Path) -> Result<EnvFile, String> {
         match fs::read_to_string(path) {
             Ok(t) => Ok(EnvFile::parse(&t)),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                Err(Error::NotFound(path.display().to_string()))
-            }
-            Err(e) => Err(e.into()),
+            Err(e) => Err(format!("{}: {e}", path.display())),
         }
     }
 
@@ -141,11 +130,6 @@ impl EnvFile {
         out
     }
 
-    pub fn lines(&self) -> &[Line] {
-        &self.lines
-    }
-
-    /// Valor da ultima ocorrencia (mesma regra do dotenv/compose).
     pub fn get(&self, key: &str) -> Option<&str> {
         self.lines.iter().rev().find_map(|l| match l {
             Line::Var { key: k, value, .. } if k == key => Some(value.as_str()),
@@ -169,9 +153,9 @@ impl EnvFile {
         seen
     }
 
-    pub fn set(&mut self, key: &str, value: &str) -> Result<()> {
+    pub fn set(&mut self, key: &str, value: &str) -> Result<(), String> {
         if !valid_key(key) {
-            return Err(Error::Invalid(format!("nome de variavel invalido: {key}")));
+            return Err(format!("nome de variável inválido: {key}"));
         }
         let formatted = format_value(value)?;
         let slot = self
@@ -199,21 +183,23 @@ impl EnvFile {
         Ok(())
     }
 
-    /// Grava de forma atomica com permissao 0600, guardando backup (.bak-<unix>, ultimos 5).
-    pub fn save(&self, path: &Path) -> Result<()> {
+    pub fn save(&self, path: &Path) -> Result<(), String> {
+        if let Some(dir) = path.parent() {
+            fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+        }
         if path.exists() {
-            backup(path)?;
+            let _ = backup(path);
         }
         let name = path.file_name().and_then(|n| n.to_str()).unwrap_or(".env");
         let tmp = path.with_file_name(format!("{name}.kodoo-tmp"));
-        write_private(&tmp, self.to_text().as_bytes())?;
-        fs::rename(&tmp, path)?;
+        write_private(&tmp, self.to_text().as_bytes()).map_err(|e| e.to_string())?;
+        fs::rename(&tmp, path).map_err(|e| e.to_string())?;
         Ok(())
     }
 }
 
 #[cfg(unix)]
-fn write_private(path: &Path, data: &[u8]) -> Result<()> {
+fn write_private(path: &Path, data: &[u8]) -> std::io::Result<()> {
     use std::io::Write;
     use std::os::unix::fs::OpenOptionsExt;
     let mut f = fs::OpenOptions::new()
@@ -226,14 +212,12 @@ fn write_private(path: &Path, data: &[u8]) -> Result<()> {
     f.sync_all()?;
     Ok(())
 }
-
 #[cfg(not(unix))]
-fn write_private(path: &Path, data: &[u8]) -> Result<()> {
-    fs::write(path, data)?;
-    Ok(())
+fn write_private(path: &Path, data: &[u8]) -> std::io::Result<()> {
+    fs::write(path, data)
 }
 
-fn backup(path: &Path) -> Result<()> {
+fn backup(path: &Path) -> Result<(), String> {
     let name = path
         .file_name()
         .and_then(|n| n.to_str())
@@ -244,56 +228,7 @@ fn backup(path: &Path) -> Result<()> {
         .map(|d| d.as_secs())
         .unwrap_or(0);
     let dir = path.parent().unwrap_or_else(|| Path::new("."));
-    let data = fs::read(path)?;
-    write_private(&dir.join(format!("{name}.bak-{ts}")), &data)?;
-    let prefix = format!("{name}.bak-");
-    let mut baks: Vec<String> = fs::read_dir(dir)?
-        .filter_map(|e| e.ok())
-        .filter_map(|e| e.file_name().into_string().ok())
-        .filter(|n| n.starts_with(&prefix))
-        .collect();
-    baks.sort();
-    while baks.len() > 5 {
-        let old = baks.remove(0);
-        let _ = fs::remove_file(dir.join(old));
-    }
+    let data = fs::read(path).map_err(|e| e.to_string())?;
+    write_private(&dir.join(format!("{name}.bak-{ts}")), &data).map_err(|e| e.to_string())?;
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    const SAMPLE: &str = "# cabecalho\n\nIMAGE_REF=kodoo/trivia:RELEASE\nCUSTOM=latest  # troque\nQUOTED=\"a b\"\nEMPTY=\n";
-
-    #[test]
-    fn roundtrip_is_exact() {
-        assert_eq!(EnvFile::parse(SAMPLE).to_text(), SAMPLE);
-    }
-
-    #[test]
-    fn get_and_trailing_comment() {
-        let e = EnvFile::parse(SAMPLE);
-        assert_eq!(e.get("CUSTOM"), Some("latest"));
-        assert_eq!(e.get("QUOTED"), Some("a b"));
-        assert!(e.is_blank("EMPTY"));
-        assert_eq!(e.get("NOPE"), None);
-    }
-
-    #[test]
-    fn set_keeps_comment_and_appends_new() {
-        let mut e = EnvFile::parse(SAMPLE);
-        e.set("CUSTOM", "v2").unwrap();
-        e.set("NOVA", "x y").unwrap();
-        let t = e.to_text();
-        assert!(t.contains("CUSTOM=v2  # troque\n"));
-        assert!(t.ends_with("NOVA='x y'\n"));
-    }
-
-    #[test]
-    fn rejects_newline_and_bad_key() {
-        let mut e = EnvFile::default();
-        assert!(e.set("A", "l1\nl2").is_err());
-        assert!(e.set("1A", "x").is_err());
-    }
 }

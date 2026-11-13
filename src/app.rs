@@ -5,7 +5,10 @@ use std::path::Path;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::action::{Action, Event};
-use crate::domain::{allocate_costs, Container, EnvVar, Node, OpsStatus, Product, ProductEnv, StackState};
+use crate::domain::{
+    allocate_costs, Container, EnvVar, Node, OpsStatus, Product, ProductEnv, StackState,
+};
+use crate::ops_core::{envfile, secrets, validate};
 use crate::telemetry::TelemetryProvider;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -141,19 +144,89 @@ impl AppState {
             },
         ];
         let containers = vec![
-            Container { id: "c1".into(), name: "web-frontend".into(), node_id: "n1".into(), stack: "trivia".into(), cpu_share_pct: 12.0, ram_share_pct: 18.0, status: "running".into(), logs: vec!["[boot] frontend ready".into()] },
-            Container { id: "c2".into(), name: "api-backend".into(), node_id: "n1".into(), stack: "trivia".into(), cpu_share_pct: 14.0, ram_share_pct: 20.0, status: "running".into(), logs: vec!["[boot] api listening".into()] },
-            Container { id: "c3".into(), name: "worker-jobs".into(), node_id: "n1".into(), stack: "trivia".into(), cpu_share_pct: 6.0, ram_share_pct: 8.0, status: "running".into(), logs: vec!["[boot] worker started".into()] },
-            Container { id: "c4".into(), name: "accounting-web".into(), node_id: "n2".into(), stack: "accounting".into(), cpu_share_pct: 20.0, ram_share_pct: 24.0, status: "running".into(), logs: vec!["[boot] accounting ui".into()] },
-            Container { id: "c5".into(), name: "postgres".into(), node_id: "n2".into(), stack: "accounting".into(), cpu_share_pct: 18.0, ram_share_pct: 26.0, status: "running".into(), logs: vec!["[boot] db ready".into()] },
-            Container { id: "c6".into(), name: "redis".into(), node_id: "n2".into(), stack: "accounting".into(), cpu_share_pct: 8.0, ram_share_pct: 10.0, status: "running".into(), logs: vec!["[boot] cache warm".into()] },
+            Container {
+                id: "c1".into(),
+                name: "web-frontend".into(),
+                node_id: "n1".into(),
+                stack: "trivia".into(),
+                cpu_share_pct: 12.0,
+                ram_share_pct: 18.0,
+                status: "running".into(),
+                logs: vec!["[boot] frontend ready".into()],
+            },
+            Container {
+                id: "c2".into(),
+                name: "api-backend".into(),
+                node_id: "n1".into(),
+                stack: "trivia".into(),
+                cpu_share_pct: 14.0,
+                ram_share_pct: 20.0,
+                status: "running".into(),
+                logs: vec!["[boot] api listening".into()],
+            },
+            Container {
+                id: "c3".into(),
+                name: "worker-jobs".into(),
+                node_id: "n1".into(),
+                stack: "trivia".into(),
+                cpu_share_pct: 6.0,
+                ram_share_pct: 8.0,
+                status: "running".into(),
+                logs: vec!["[boot] worker started".into()],
+            },
+            Container {
+                id: "c4".into(),
+                name: "accounting-web".into(),
+                node_id: "n2".into(),
+                stack: "accounting".into(),
+                cpu_share_pct: 20.0,
+                ram_share_pct: 24.0,
+                status: "running".into(),
+                logs: vec!["[boot] accounting ui".into()],
+            },
+            Container {
+                id: "c5".into(),
+                name: "postgres".into(),
+                node_id: "n2".into(),
+                stack: "accounting".into(),
+                cpu_share_pct: 18.0,
+                ram_share_pct: 26.0,
+                status: "running".into(),
+                logs: vec!["[boot] db ready".into()],
+            },
+            Container {
+                id: "c6".into(),
+                name: "redis".into(),
+                node_id: "n2".into(),
+                stack: "accounting".into(),
+                cpu_share_pct: 8.0,
+                ram_share_pct: 10.0,
+                status: "running".into(),
+                logs: vec!["[boot] cache warm".into()],
+            },
         ];
         let mut env_states = HashMap::new();
         env_states.insert(Product::Accounting, load_env_state(Product::Accounting));
         env_states.insert(Product::Trivia, load_env_state(Product::Trivia));
         let mut ops_states = HashMap::new();
-        ops_states.insert(Product::Accounting, OpsStatus { product: Product::Accounting, state: StackState::Running, last_action: "status ok (mock)".into(), log_lines: vec!["[accounting] stack saudável".into()] });
-        ops_states.insert(Product::Trivia, OpsStatus { product: Product::Trivia, state: StackState::Running, last_action: "status ok (mock)".into(), log_lines: vec!["[trivia] stack saudável".into()] });
+        ops_states.insert(
+            Product::Accounting,
+            OpsStatus {
+                product: Product::Accounting,
+                state: StackState::Running,
+                last_action: "status ok (mock)".into(),
+                log_lines: vec!["[accounting] stack saudável".into()],
+            },
+        );
+        ops_states.insert(
+            Product::Trivia,
+            OpsStatus {
+                product: Product::Trivia,
+                state: StackState::Running,
+                last_action: "status ok (mock)".into(),
+                log_lines: vec!["[trivia] stack saudável".into()],
+            },
+        );
 
         Self {
             should_quit: false,
@@ -188,7 +261,10 @@ impl AppState {
 
     pub fn containers_for_selected_node(&self) -> Vec<&Container> {
         if let Some(n) = self.selected_node() {
-            self.containers.iter().filter(|c| c.node_id == n.id).collect()
+            self.containers
+                .iter()
+                .filter(|c| c.node_id == n.id)
+                .collect()
         } else {
             vec![]
         }
@@ -200,7 +276,9 @@ impl AppState {
     }
 
     pub fn container_costs_map(&self) -> HashMap<String, f64> {
-        allocate_costs(&self.nodes, &self.containers).into_iter().collect()
+        allocate_costs(&self.nodes, &self.containers)
+            .into_iter()
+            .collect()
     }
 
     pub fn current_env(&self) -> Option<&ProductEnv> {
@@ -242,7 +320,10 @@ impl AppState {
                 }
                 _ => {}
             }
-            if ops.log_lines.len() > 80 { let drain = ops.log_lines.len()-80; ops.log_lines.drain(0..drain); }
+            if ops.log_lines.len() > 80 {
+                let drain = ops.log_lines.len() - 80;
+                ops.log_lines.drain(0..drain);
+            }
         }
     }
 
@@ -270,37 +351,57 @@ impl AppState {
             KeyCode::Char('p') => {
                 self.featured_product = self.featured_product.toggle();
                 self.clamp_env_selection();
-                if self.view == View::BridgesPlugins && !env_has_tunnel_token(self.featured_product) {
-                    self.modal = Modal::TunnelToken { input: String::new(), product: self.featured_product };
+                if self.view == View::BridgesPlugins && !env_has_tunnel_token(self.featured_product)
+                {
+                    self.modal = Modal::TunnelToken {
+                        input: String::new(),
+                        product: self.featured_product,
+                    };
                 }
                 None
             }
             KeyCode::Char('1') => {
-                if self.view == View::ClusterFinOps && self.focus == FocusPane::Detail { self.detail_tab = DetailTab::Logs; }
-                else { self.view = View::ClusterFinOps; }
+                if self.view == View::ClusterFinOps && self.focus == FocusPane::Detail {
+                    self.detail_tab = DetailTab::Logs;
+                } else {
+                    self.view = View::ClusterFinOps;
+                }
                 None
             }
             KeyCode::Char('2') => {
-                if self.view == View::ClusterFinOps && self.focus == FocusPane::Detail { self.detail_tab = DetailTab::CostBreakdown; }
-                else { self.view = View::ComposeStacks; }
+                if self.view == View::ClusterFinOps && self.focus == FocusPane::Detail {
+                    self.detail_tab = DetailTab::CostBreakdown;
+                } else {
+                    self.view = View::ComposeStacks;
+                }
                 None
             }
             KeyCode::Char('3') => {
-                if self.view == View::ClusterFinOps && self.focus == FocusPane::Detail { self.detail_tab = DetailTab::ComposeYaml; }
-                else {
+                if self.view == View::ClusterFinOps && self.focus == FocusPane::Detail {
+                    self.detail_tab = DetailTab::ComposeYaml;
+                } else {
                     self.view = View::BridgesPlugins;
                     if !env_has_tunnel_token(self.featured_product) {
-                        self.modal = Modal::TunnelToken { input: String::new(), product: self.featured_product };
+                        self.modal = Modal::TunnelToken {
+                            input: String::new(),
+                            product: self.featured_product,
+                        };
                     }
                 }
                 None
             }
             KeyCode::Char('4') => {
-                if self.view == View::ClusterFinOps && self.focus == FocusPane::Detail { self.detail_tab = DetailTab::Forecast7d; }
-                else { self.view = View::EnvLifecycle; }
+                if self.view == View::ClusterFinOps && self.focus == FocusPane::Detail {
+                    self.detail_tab = DetailTab::Forecast7d;
+                } else {
+                    self.view = View::EnvLifecycle;
+                }
                 None
             }
-            KeyCode::Char('5') => { self.view = View::Operations; None }
+            KeyCode::Char('5') => {
+                self.view = View::Operations;
+                None
+            }
             KeyCode::Tab => {
                 if self.view == View::ClusterFinOps {
                     self.focus = match self.focus {
@@ -311,30 +412,110 @@ impl AppState {
                 }
                 None
             }
-            KeyCode::Char('l') if self.view == View::ClusterFinOps && self.focus == FocusPane::Detail => { self.detail_tab = DetailTab::Logs; None }
-            KeyCode::Char('b') if self.view == View::ClusterFinOps && self.focus == FocusPane::Detail => { self.detail_tab = DetailTab::CostBreakdown; None }
-            KeyCode::Char('y') if self.view == View::ClusterFinOps && self.focus == FocusPane::Detail => { self.detail_tab = DetailTab::ComposeYaml; None }
-            KeyCode::Char('f') if self.view == View::ClusterFinOps && self.focus == FocusPane::Detail => { self.detail_tab = DetailTab::Forecast7d; None }
-            KeyCode::Up => { self.move_up(); None }
-            KeyCode::Down => { self.move_down(); None }
-            KeyCode::Enter if self.view == View::EnvLifecycle => { self.start_env_edit(); None }
-            KeyCode::Char('g') if self.view == View::EnvLifecycle => { self.generate_env_from_example(); None }
-            KeyCode::Char('r') if self.view == View::EnvLifecycle => { self.reload_env(); None }
-            KeyCode::Char('w') if self.view == View::EnvLifecycle => { self.save_env(); None }
-            KeyCode::Char('u') if self.view == View::Operations => { self.run_ops_action("up"); None }
-            KeyCode::Char('x') if self.view == View::Operations => { self.run_ops_action("down"); None }
-            KeyCode::Char('m') if self.view == View::Operations => { self.run_ops_action("migrate"); None }
-            KeyCode::Char('k') if self.view == View::Operations => { self.run_ops_action("status"); None }
-            KeyCode::Char('o') if self.view == View::Operations => { self.run_ops_action("logs"); None }
-            KeyCode::Left if self.view == View::Operations => { self.ops_selected_action = self.ops_selected_action.saturating_sub(1); None }
-            KeyCode::Right if self.view == View::Operations => { if self.ops_selected_action < 4 { self.ops_selected_action += 1; } None }
-            KeyCode::Enter if self.view == View::Operations => { self.run_selected_ops_action(); None }
-            KeyCode::Char('a') if self.view == View::ClusterFinOps => { self.modal = Modal::AddNode(AddNodeForm::default()); None }
-            KeyCode::Char('d') if self.view == View::ClusterFinOps => {
-                if !self.nodes.is_empty() { self.modal = Modal::DropNode { confirm: false }; }
+            KeyCode::Char('l')
+                if self.view == View::ClusterFinOps && self.focus == FocusPane::Detail =>
+            {
+                self.detail_tab = DetailTab::Logs;
                 None
             }
-            KeyCode::Char('s') if self.view == View::ClusterFinOps => { self.simulate_load(); None }
+            KeyCode::Char('b')
+                if self.view == View::ClusterFinOps && self.focus == FocusPane::Detail =>
+            {
+                self.detail_tab = DetailTab::CostBreakdown;
+                None
+            }
+            KeyCode::Char('y')
+                if self.view == View::ClusterFinOps && self.focus == FocusPane::Detail =>
+            {
+                self.detail_tab = DetailTab::ComposeYaml;
+                None
+            }
+            KeyCode::Char('f')
+                if self.view == View::ClusterFinOps && self.focus == FocusPane::Detail =>
+            {
+                self.detail_tab = DetailTab::Forecast7d;
+                None
+            }
+            KeyCode::Up => {
+                self.move_up();
+                None
+            }
+            KeyCode::Down => {
+                self.move_down();
+                None
+            }
+            KeyCode::Enter if self.view == View::EnvLifecycle => {
+                self.start_env_edit();
+                None
+            }
+            KeyCode::Char('g') if self.view == View::EnvLifecycle => {
+                self.generate_env_from_example();
+                None
+            }
+            KeyCode::Char('r') if self.view == View::EnvLifecycle => {
+                self.reload_env();
+                None
+            }
+            KeyCode::Char('w') if self.view == View::EnvLifecycle => {
+                self.save_env();
+                None
+            }
+            KeyCode::Char('v') if self.view == View::EnvLifecycle => {
+                self.toggle_env_reveal();
+                None
+            }
+            KeyCode::Char('n') if self.view == View::EnvLifecycle => {
+                self.generate_secret_for_selected();
+                None
+            }
+            KeyCode::Char('u') if self.view == View::Operations => {
+                self.run_ops_action("up");
+                None
+            }
+            KeyCode::Char('x') if self.view == View::Operations => {
+                self.run_ops_action("down");
+                None
+            }
+            KeyCode::Char('m') if self.view == View::Operations => {
+                self.run_ops_action("migrate");
+                None
+            }
+            KeyCode::Char('k') if self.view == View::Operations => {
+                self.run_ops_action("status");
+                None
+            }
+            KeyCode::Char('o') if self.view == View::Operations => {
+                self.run_ops_action("logs");
+                None
+            }
+            KeyCode::Left if self.view == View::Operations => {
+                self.ops_selected_action = self.ops_selected_action.saturating_sub(1);
+                None
+            }
+            KeyCode::Right if self.view == View::Operations => {
+                if self.ops_selected_action < 4 {
+                    self.ops_selected_action += 1;
+                }
+                None
+            }
+            KeyCode::Enter if self.view == View::Operations => {
+                self.run_selected_ops_action();
+                None
+            }
+            KeyCode::Char('a') if self.view == View::ClusterFinOps => {
+                self.modal = Modal::AddNode(AddNodeForm::default());
+                None
+            }
+            KeyCode::Char('d') if self.view == View::ClusterFinOps => {
+                if !self.nodes.is_empty() {
+                    self.modal = Modal::DropNode { confirm: false };
+                }
+                None
+            }
+            KeyCode::Char('s') if self.view == View::ClusterFinOps => {
+                self.simulate_load();
+                None
+            }
             _ => None,
         }
     }
@@ -342,31 +523,61 @@ impl AppState {
     fn move_up(&mut self) {
         match self.view {
             View::ClusterFinOps => match self.focus {
-                FocusPane::Nodes => { if self.selected_node > 0 { self.selected_node -= 1; self.selected_container = 0; } }
-                FocusPane::Containers => { if self.selected_container > 0 { self.selected_container -= 1; } }
-                FocusPane::Detail => { self.log_scroll = self.log_scroll.saturating_sub(1); }
+                FocusPane::Nodes => {
+                    if self.selected_node > 0 {
+                        self.selected_node -= 1;
+                        self.selected_container = 0;
+                    }
+                }
+                FocusPane::Containers => {
+                    if self.selected_container > 0 {
+                        self.selected_container -= 1;
+                    }
+                }
+                FocusPane::Detail => {
+                    self.log_scroll = self.log_scroll.saturating_sub(1);
+                }
             },
-            View::EnvLifecycle => { if self.env_selected > 0 { self.env_selected -= 1; } }
-            View::Operations if self.ops_selected_action > 0 => { self.ops_selected_action -= 1; }
+            View::EnvLifecycle => {
+                if self.env_selected > 0 {
+                    self.env_selected -= 1;
+                }
+            }
+            View::Operations if self.ops_selected_action > 0 => {
+                self.ops_selected_action -= 1;
+            }
             _ => {}
         }
     }
     fn move_down(&mut self) {
         match self.view {
             View::ClusterFinOps => match self.focus {
-                FocusPane::Nodes => { if self.selected_node + 1 < self.nodes.len() { self.selected_node += 1; self.selected_container = 0; } }
+                FocusPane::Nodes => {
+                    if self.selected_node + 1 < self.nodes.len() {
+                        self.selected_node += 1;
+                        self.selected_container = 0;
+                    }
+                }
                 FocusPane::Containers => {
                     let len = self.containers_for_selected_node().len().saturating_add(1);
-                    if self.selected_container + 1 < len { self.selected_container += 1; }
+                    if self.selected_container + 1 < len {
+                        self.selected_container += 1;
+                    }
                 }
-                FocusPane::Detail => { self.log_scroll = self.log_scroll.saturating_add(1); }
+                FocusPane::Detail => {
+                    self.log_scroll = self.log_scroll.saturating_add(1);
+                }
             },
             View::EnvLifecycle => {
                 if let Some(env) = self.current_env() {
-                    if self.env_selected + 1 < env.vars.len() { self.env_selected += 1; }
+                    if self.env_selected + 1 < env.vars.len() {
+                        self.env_selected += 1;
+                    }
                 }
             }
-            View::Operations if self.ops_selected_action < 4 => { self.ops_selected_action += 1; }
+            View::Operations if self.ops_selected_action < 4 => {
+                self.ops_selected_action += 1;
+            }
             _ => {}
         }
     }
@@ -382,13 +593,26 @@ impl AppState {
 
     fn clamp_env_selection(&mut self) {
         if let Some(env) = self.current_env() {
-            if env.vars.is_empty() { self.env_selected = 0; }
-            else if self.env_selected >= env.vars.len() { self.env_selected = env.vars.len()-1; }
+            if env.vars.is_empty() {
+                self.env_selected = 0;
+            } else if self.env_selected >= env.vars.len() {
+                self.env_selected = env.vars.len() - 1;
+            }
         }
     }
 
     fn start_env_edit(&mut self) {
-        let (idx, val) = if let Some(env) = self.current_env() { (self.env_selected, env.vars.get(self.env_selected).map(|v| v.value.clone()).unwrap_or_default()) } else { return; };
+        let (idx, val) = if let Some(env) = self.current_env() {
+            (
+                self.env_selected,
+                env.vars
+                    .get(self.env_selected)
+                    .map(|v| v.value.clone())
+                    .unwrap_or_default(),
+            )
+        } else {
+            return;
+        };
         self.env_selected = idx;
         self.env_editing = true;
         self.env_input = val;
@@ -396,7 +620,10 @@ impl AppState {
 
     fn handle_env_edit_key(&mut self, key: KeyEvent) -> Option<Action> {
         match key.code {
-            KeyCode::Esc => { self.env_editing = false; self.env_input.clear(); }
+            KeyCode::Esc => {
+                self.env_editing = false;
+                self.env_input.clear();
+            }
             KeyCode::Enter => {
                 let idx = self.env_selected;
                 let input = self.env_input.clone();
@@ -410,8 +637,12 @@ impl AppState {
                 self.env_editing = false;
                 self.env_input.clear();
             }
-            KeyCode::Backspace => { self.env_input.pop(); }
-            KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => { self.env_input.push(c); }
+            KeyCode::Backspace => {
+                self.env_input.pop();
+            }
+            KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.env_input.push(c);
+            }
             _ => {}
         }
         None
@@ -435,7 +666,44 @@ impl AppState {
             Err(e) => format!("falha ao ler exemplo: {e}"),
         };
         if let Some(env) = self.env_states.get_mut(&product) {
-            if !msg.starts_with("falha") { /* ok */ } else { env.last_action = msg; }
+            if !msg.starts_with("falha") { /* ok */
+            } else {
+                env.last_action = msg;
+            }
+        }
+    }
+
+    fn toggle_env_reveal(&mut self) {
+        if let Some(env) = self.current_env_mut() {
+            env.reveal_secrets = !env.reveal_secrets;
+            env.last_action = if env.reveal_secrets {
+                "segredos visíveis".into()
+            } else {
+                "segredos mascarados".into()
+            };
+        }
+    }
+
+    fn generate_secret_for_selected(&mut self) {
+        let idx = self.env_selected;
+        let Some(env) = self.current_env_mut() else {
+            return;
+        };
+        let Some(var_key) = env.vars.get(idx).map(|v| v.key.clone()) else {
+            return;
+        };
+        let kind = secrets::default_kind_for(&var_key).unwrap_or(secrets::SecretKind::Hex(24));
+        match secrets::generate(kind) {
+            Ok(v) => {
+                if let Some(var) = env.vars.get_mut(idx) {
+                    var.value = v;
+                }
+                env.dirty = true;
+                env.last_action = secrets::rotation_note(&var_key)
+                    .map(|n| format!("segredo gerado: {n}"))
+                    .unwrap_or_else(|| "segredo gerado (não salvo)".into());
+            }
+            Err(e) => env.last_action = format!("falha ao gerar segredo: {e}"),
         }
     }
 
@@ -451,13 +719,22 @@ impl AppState {
         let path = product_env_path(product);
         let (content, can_save) = if let Some(env) = self.current_env() {
             (render_env_file(&env.vars), true)
-        } else { (String::new(), false) };
-        if !can_save { return; }
+        } else {
+            (String::new(), false)
+        };
+        if !can_save {
+            return;
+        }
         let result = fs::write(&path, content);
         if let Some(env) = self.current_env_mut() {
             match result {
-                Ok(_) => { env.dirty = false; env.last_action = format!("salvo em {path}"); }
-                Err(e) => { env.last_action = format!("erro ao salvar: {e}"); }
+                Ok(_) => {
+                    env.dirty = false;
+                    env.last_action = format!("salvo em {path}");
+                }
+                Err(e) => {
+                    env.last_action = format!("erro ao salvar: {e}");
+                }
             }
         }
     }
@@ -470,12 +747,14 @@ impl AppState {
                 "up" => {
                     ops.state = StackState::Starting;
                     ops.last_action = "subindo stack (simulado)".into();
-                    ops.log_lines.push(format!("[ops] common/dc.sh {label} up -d (simulado)"));
+                    ops.log_lines
+                        .push(format!("[ops] common/dc.sh {label} up -d (simulado)"));
                 }
                 "down" => {
                     ops.state = StackState::Stopping;
                     ops.last_action = "parando stack (simulado)".into();
-                    ops.log_lines.push(format!("[ops] common/dc.sh {label} down (simulado)"));
+                    ops.log_lines
+                        .push(format!("[ops] common/dc.sh {label} down (simulado)"));
                 }
                 "migrate" => {
                     ops.last_action = "migração solicitada (simulada)".into();
@@ -483,27 +762,43 @@ impl AppState {
                 }
                 "status" => {
                     ops.last_action = "status atualizado (simulado)".into();
-                    ops.log_lines.push(format!("[ops] estado atual: {}", ops.state.label()));
+                    ops.log_lines
+                        .push(format!("[ops] estado atual: {}", ops.state.label()));
                 }
                 "logs" => {
                     ops.last_action = "logs consultados (simulado)".into();
-                    ops.log_lines.push(format!("[ops] common/dc.sh {label} logs --tail=50 (simulado)"));
+                    ops.log_lines.push(format!(
+                        "[ops] common/dc.sh {label} logs --tail=50 (simulado)"
+                    ));
                 }
                 _ => {}
             }
-            if ops.log_lines.len() > 80 { let drain = ops.log_lines.len()-80; ops.log_lines.drain(0..drain); }
+            if ops.log_lines.len() > 80 {
+                let drain = ops.log_lines.len() - 80;
+                ops.log_lines.drain(0..drain);
+            }
         }
     }
 
     fn run_selected_ops_action(&mut self) {
-        let action = match self.ops_selected_action { 0 => "up", 1 => "down", 2 => "migrate", 3 => "status", _ => "logs" };
+        let action = match self.ops_selected_action {
+            0 => "up",
+            1 => "down",
+            2 => "migrate",
+            3 => "status",
+            _ => "logs",
+        };
         self.run_ops_action(action);
     }
 
     fn handle_add_node_key(&mut self, key: KeyEvent) -> Option<Action> {
-        let Modal::AddNode(ref mut form) = self.modal else { return None; };
+        let Modal::AddNode(ref mut form) = self.modal else {
+            return None;
+        };
         match key.code {
-            KeyCode::Esc => { self.modal = Modal::None; }
+            KeyCode::Esc => {
+                self.modal = Modal::None;
+            }
             KeyCode::Tab => {
                 form.field = match form.field {
                     AddField::Name => AddField::Host,
@@ -513,11 +808,17 @@ impl AppState {
                     AddField::Cost => AddField::Name,
                 };
             }
-            KeyCode::Backspace => { Self::active_field_mut(form).pop(); }
+            KeyCode::Backspace => {
+                Self::active_field_mut(form).pop();
+            }
             KeyCode::Enter => {
                 if let Ok(cost) = form.cost.trim().parse::<f64>() {
                     let idx = self.nodes.len() + 1;
-                    let name = if form.name.trim().is_empty() { format!("node-{idx}") } else { form.name.trim().to_string() };
+                    let name = if form.name.trim().is_empty() {
+                        format!("node-{idx}")
+                    } else {
+                        form.name.trim().to_string()
+                    };
                     let region = "custom".to_string();
                     self.nodes.push(Node {
                         id: format!("n{idx}"),
@@ -558,9 +859,13 @@ impl AppState {
 
     fn handle_drop_node_key(&mut self, key: KeyEvent) -> Option<Action> {
         match key.code {
-            KeyCode::Esc | KeyCode::Char('n') => { self.modal = Modal::None; }
+            KeyCode::Esc | KeyCode::Char('n') => {
+                self.modal = Modal::None;
+            }
             KeyCode::Tab | KeyCode::Left | KeyCode::Right => {
-                if let Modal::DropNode { ref mut confirm } = self.modal { *confirm = !*confirm; }
+                if let Modal::DropNode { ref mut confirm } = self.modal {
+                    *confirm = !*confirm;
+                }
             }
             KeyCode::Enter => {
                 if let Modal::DropNode { confirm: true } = self.modal {
@@ -578,7 +883,11 @@ impl AppState {
                 }
                 self.modal = Modal::None;
             }
-            KeyCode::Char('y') => { if let Modal::DropNode { ref mut confirm } = self.modal { *confirm = true; } }
+            KeyCode::Char('y') => {
+                if let Modal::DropNode { ref mut confirm } = self.modal {
+                    *confirm = true;
+                }
+            }
             _ => {}
         }
         None
@@ -591,9 +900,13 @@ impl AppState {
             return None;
         };
         match key.code {
-            KeyCode::Esc => { self.modal = Modal::None; }
+            KeyCode::Esc => {
+                self.modal = Modal::None;
+            }
             KeyCode::Backspace => {
-                if let Modal::TunnelToken { ref mut input, .. } = self.modal { input.pop(); }
+                if let Modal::TunnelToken { ref mut input, .. } = self.modal {
+                    input.pop();
+                }
             }
             KeyCode::Enter => {
                 let token = input_snapshot.trim().to_string();
@@ -603,7 +916,9 @@ impl AppState {
                 self.modal = Modal::None;
             }
             KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
-                if let Modal::TunnelToken { ref mut input, .. } = self.modal { input.push(c); }
+                if let Modal::TunnelToken { ref mut input, .. } = self.modal {
+                    input.push(c);
+                }
             }
             _ => {}
         }
@@ -611,13 +926,21 @@ impl AppState {
     }
 
     pub fn compose_yaml_for_selected(&self) -> String {
-        let Some(node) = self.selected_node() else { return "# no node selected".into(); };
-        let containers: Vec<&Container> = self.containers.iter().filter(|c| c.node_id == node.id).collect();
+        let Some(node) = self.selected_node() else {
+            return "# no node selected".into();
+        };
+        let containers: Vec<&Container> = self
+            .containers
+            .iter()
+            .filter(|c| c.node_id == node.id)
+            .collect();
         let mut y = String::from("version: \"3.9\"\nservices:\n");
         for c in containers {
             y.push_str(&format!("  {}:\n    image: example/{}:latest\n    x-provider:\n      node: {}\n      region: {}\n    x-finops:\n      monthly_estimate: \"${:.2}\"\n", c.name, c.name, node.name, node.region, (c.cpu_share_pct+c.ram_share_pct)/200.0*node.monthly_cost));
         }
-        if y == "version: \"3.9\"\nservices:\n" { y.push_str("  {}\n"); }
+        if y == "version: \"3.9\"\nservices:\n" {
+            y.push_str("  {}\n");
+        }
         y
     }
 
@@ -651,9 +974,17 @@ pub fn parse_env_vars(content: &str) -> Vec<EnvVar> {
             continue;
         }
         if let Some((k, v)) = line.split_once('=') {
-            vars.push(EnvVar { key: k.trim().to_string(), value: v.to_string(), comment: pending_comment.take() });
+            vars.push(EnvVar {
+                key: k.trim().to_string(),
+                value: v.to_string(),
+                comment: pending_comment.take(),
+            });
         } else {
-            vars.push(EnvVar { key: line.to_string(), value: String::new(), comment: pending_comment.take() });
+            vars.push(EnvVar {
+                key: line.to_string(),
+                value: String::new(),
+                comment: pending_comment.take(),
+            });
         }
     }
     vars
@@ -663,7 +994,9 @@ pub fn render_env_file(vars: &[EnvVar]) -> String {
     let mut out = String::new();
     for v in vars {
         if let Some(c) = &v.comment {
-            if !c.is_empty() { out.push_str(&format!("# {c}\n")); }
+            if !c.is_empty() {
+                out.push_str(&format!("# {c}\n"));
+            }
         }
         out.push_str(&format!("{}={}\n", v.key, v.value));
     }
@@ -673,21 +1006,102 @@ pub fn render_env_file(vars: &[EnvVar]) -> String {
 pub fn load_env_state(product: Product) -> ProductEnv {
     let env_path = product_env_path(product);
     let example_path = product_env_example_path(product);
-    let (path_hint, content, last_action) = if Path::new(&env_path).exists() {
+    let (path_hint, content, last_action, loaded_from_env) = if Path::new(&env_path).exists() {
         match fs::read_to_string(&env_path) {
-            Ok(c) => (env_path.clone(), c, format!("carregado de {env_path}")),
-            Err(e) => (env_path.clone(), String::new(), format!("erro ao ler {env_path}: {e}")),
+            Ok(c) => (
+                env_path.clone(),
+                c,
+                format!("carregado de {env_path}"),
+                true,
+            ),
+            Err(e) => (
+                env_path.clone(),
+                String::new(),
+                format!("erro ao ler {env_path}: {e}"),
+                false,
+            ),
         }
     } else if Path::new(&example_path).exists() {
         match fs::read_to_string(&example_path) {
-            Ok(c) => (env_path.clone(), c, format!("baseado em {example_path} (gere/salve .env)")),
-            Err(e) => (env_path.clone(), String::new(), format!("erro ao ler {example_path}: {e}")),
+            Ok(c) => (
+                env_path.clone(),
+                c,
+                format!("baseado em {example_path} (gere/salve .env)"),
+                false,
+            ),
+            Err(e) => (
+                env_path.clone(),
+                String::new(),
+                format!("erro ao ler {example_path}: {e}"),
+                false,
+            ),
         }
     } else {
-        (env_path.clone(), String::new(), "nenhum .env/.env.example encontrado".into())
+        (
+            env_path.clone(),
+            String::new(),
+            "nenhum .env/.env.example encontrado".into(),
+            false,
+        )
     };
-    let vars = if content.is_empty() { Vec::new() } else { parse_env_vars(&content) };
-    ProductEnv { product, path_hint, vars, dirty: false, last_action }
+    let vars = if content.is_empty() {
+        Vec::new()
+    } else {
+        parse_env_vars(&content)
+    };
+    let mut findings = Vec::new();
+    if !content.is_empty() {
+        let ef = envfile::EnvFile::parse(&content);
+        let other_product = product.toggle();
+        let other_env = fs::read_to_string(product_env_path(other_product))
+            .ok()
+            .map(|c| envfile::EnvFile::parse(&c));
+        let env_for_validation = if loaded_from_env || Path::new(&env_path).exists() {
+            fs::read_to_string(&env_path)
+                .ok()
+                .map(|c| envfile::EnvFile::parse(&c))
+                .unwrap_or_else(|| envfile::EnvFile::parse(&content))
+        } else {
+            ef.clone()
+        };
+        let path = Path::new(&env_path);
+        for fnd in validate::validate_env(&env_for_validation, path, other_env.as_ref()) {
+            findings.push(format!(
+                "{:?} {}: {}",
+                fnd.severity,
+                fnd.key.unwrap_or_else(|| "-".into()),
+                fnd.message
+            ));
+        }
+        if let Ok(ex) = fs::read_to_string(&example_path) {
+            for fnd in validate::drift(&env_for_validation, &envfile::EnvFile::parse(&ex)) {
+                findings.push(format!(
+                    "{:?} {}: {}",
+                    fnd.severity,
+                    fnd.key.unwrap_or_else(|| "-".into()),
+                    fnd.message
+                ));
+            }
+        }
+        let prod_dir = Path::new("products").join(product.label());
+        for fnd in validate::validate_build(&prod_dir) {
+            findings.push(format!(
+                "{:?} {}: {}",
+                fnd.severity,
+                fnd.key.unwrap_or_else(|| "-".into()),
+                fnd.message
+            ));
+        }
+    }
+    ProductEnv {
+        product,
+        path_hint,
+        vars,
+        dirty: false,
+        last_action,
+        reveal_secrets: false,
+        findings,
+    }
 }
 
 pub fn env_has_tunnel_token(product: Product) -> bool {

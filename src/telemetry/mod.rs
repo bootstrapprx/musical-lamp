@@ -26,8 +26,10 @@ impl TelemetryProvider for MockTelemetryProvider {
                 node.ram_pct = 0.0;
             } else {
                 let drift = (self.t as f64 * 0.3 + node.name.len() as f64).sin() * 8.0;
-                node.cpu_pct = (node.cpu_pct + drift * 0.1 + rng.gen_range(-3.0..3.0)).clamp(2.0, 96.0);
-                node.ram_pct = (node.ram_pct + drift * 0.05 + rng.gen_range(-2.0..2.0)).clamp(10.0, 94.0);
+                node.cpu_pct =
+                    (node.cpu_pct + drift * 0.1 + rng.gen_range(-3.0..3.0)).clamp(2.0, 96.0);
+                node.ram_pct =
+                    (node.ram_pct + drift * 0.05 + rng.gen_range(-2.0..2.0)).clamp(10.0, 94.0);
             }
             node.cpu_history.push(node.cpu_pct.round() as u64);
             node.ram_history.push(node.ram_pct.round() as u64);
@@ -50,16 +52,29 @@ impl TelemetryProvider for MockTelemetryProvider {
                 continue;
             }
             let n = idxs.len() as f64;
-            let base_cpu = if node.online { node.cpu_pct / n.max(1.0) } else { 0.0 };
-            let base_ram = if node.online { node.ram_pct / n.max(1.0) } else { 0.0 };
+            let base_cpu = if node.online {
+                node.cpu_pct / n.max(1.0)
+            } else {
+                0.0
+            };
+            let base_ram = if node.online {
+                node.ram_pct / n.max(1.0)
+            } else {
+                0.0
+            };
             for (j, i) in idxs.iter().enumerate() {
                 let wobble = ((self.t as f64 * 0.7) + j as f64).cos() * 4.0;
-                containers[*i].cpu_share_pct = (base_cpu + wobble + rng.gen_range(-2.0..2.0)).clamp(0.0, 100.0);
-                containers[*i].ram_share_pct = (base_ram + wobble * 0.5 + rng.gen_range(-1.5..1.5)).clamp(0.0, 100.0);
+                containers[*i].cpu_share_pct =
+                    (base_cpu + wobble + rng.gen_range(-2.0..2.0)).clamp(0.0, 100.0);
+                containers[*i].ram_share_pct =
+                    (base_ram + wobble * 0.5 + rng.gen_range(-1.5..1.5)).clamp(0.0, 100.0);
                 if node.online && self.t.is_multiple_of(2) {
                     let msg = format!(
                         "[tick {}] {} cpu={:.1}% ram={:.1}% ok",
-                        self.t, containers[*i].name, containers[*i].cpu_share_pct, containers[*i].ram_share_pct
+                        self.t,
+                        containers[*i].name,
+                        containers[*i].cpu_share_pct,
+                        containers[*i].ram_share_pct
                     );
                     containers[*i].logs.push(msg);
                     if containers[*i].logs.len() > 200 {

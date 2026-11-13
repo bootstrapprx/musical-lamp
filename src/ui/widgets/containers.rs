@@ -16,19 +16,34 @@ pub fn draw_containers(f: &mut Frame, area: Rect, state: &AppState, focused: boo
         let cost = costs.get(&c.id).copied().unwrap_or(0.0);
         items.push(ListItem::new(Line::from(vec![
             Span::styled(format!("• {} ", c.name), Style::default().fg(theme::TEAL)),
-            Span::styled(format!("${:.2}/mo", cost), Style::default().fg(theme::YELLOW)),
-            Span::styled(format!("  [{}]", c.status), Style::default().fg(theme::SUBTEXT)),
+            Span::styled(
+                format!("${:.2}/mo", cost),
+                Style::default().fg(theme::YELLOW),
+            ),
+            Span::styled(
+                format!("  [{}]", c.status),
+                Style::default().fg(theme::SUBTEXT),
+            ),
         ])));
     }
     if let Some(nid) = selected_node_id {
-        let idle = costs.get(&format!("__idle__:{nid}")).copied().unwrap_or(0.0);
+        let idle = costs
+            .get(&format!("__idle__:{nid}"))
+            .copied()
+            .unwrap_or(0.0);
         items.push(ListItem::new(Line::from(vec![
             Span::styled("• idle / unallocated ", Style::default().fg(theme::SUBTEXT)),
-            Span::styled(format!("${:.2}/mo", idle), Style::default().fg(theme::PEACH)),
+            Span::styled(
+                format!("${:.2}/mo", idle),
+                Style::default().fg(theme::PEACH),
+            ),
         ])));
     }
     if items.is_empty() {
-        items.push(ListItem::new(Line::from(Span::styled("Nenhum container neste nó", Style::default().fg(theme::SUBTEXT)))));
+        items.push(ListItem::new(Line::from(Span::styled(
+            "Nenhum container neste nó",
+            Style::default().fg(theme::SUBTEXT),
+        ))));
     }
 
     let border_color = if focused { theme::BLUE } else { theme::OVERLAY };
@@ -39,7 +54,11 @@ pub fn draw_containers(f: &mut Frame, area: Rect, state: &AppState, focused: boo
         .title("CONTAINERS / STACKS");
     let list = List::new(items)
         .block(block)
-        .highlight_style(Style::default().bg(theme::OVERLAY).add_modifier(Modifier::BOLD))
+        .highlight_style(
+            Style::default()
+                .bg(theme::OVERLAY)
+                .add_modifier(Modifier::BOLD),
+        )
         .highlight_symbol("› ");
     let mut st = ListState::default();
     let max = list_containers.len().saturating_add(1);

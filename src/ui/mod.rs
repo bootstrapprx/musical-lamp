@@ -36,7 +36,9 @@ pub fn draw(f: &mut Frame, state: &AppState) {
     match &state.modal {
         Modal::AddNode(form) => modals::draw_add_node(f, size, form),
         Modal::DropNode { confirm } => modals::draw_drop_node(f, size, state, *confirm),
-        Modal::TunnelToken { input, product } => modals::draw_tunnel_token(f, size, *product, input),
+        Modal::TunnelToken { input, product } => {
+            modals::draw_tunnel_token(f, size, *product, input)
+        }
         Modal::None => {}
     }
 }
@@ -60,33 +62,76 @@ fn draw_header(f: &mut Frame, area: Rect, state: &AppState) {
     let budget_color = theme::budget_color(projected, state.budget);
     let header = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(28), Constraint::Percentage(44), Constraint::Percentage(28)])
+        .constraints([
+            Constraint::Percentage(28),
+            Constraint::Percentage(44),
+            Constraint::Percentage(28),
+        ])
         .split(area);
 
     let left = Paragraph::new(vec![
         Line::from(vec![
-            Span::styled("Kodoo Orchestrator ", Style::default().fg(theme::MAUVE).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "Kodoo Orchestrator ",
+                Style::default()
+                    .fg(theme::MAUVE)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled("v0.1.0", Style::default().fg(theme::SUBTEXT)),
         ]),
         Line::from(vec![
             Span::styled("Produto: ", Style::default().fg(theme::SUBTEXT)),
-            Span::styled(state.featured_product.label(), Style::default().fg(theme::TEAL).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                state.featured_product.label(),
+                Style::default()
+                    .fg(theme::TEAL)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled("  [p] alternar", Style::default().fg(theme::OVERLAY)),
         ]),
-    ]).block(Block::default().borders(Borders::ALL).border_type(BorderType::Rounded).title("Projeto"));
+    ])
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .title("Projeto"),
+    );
     f.render_widget(left, header[0]);
 
     let tabs = Tabs::new(titles)
         .select(selected)
         .style(Style::default().fg(theme::SUBTEXT))
-        .highlight_style(Style::default().fg(theme::BLUE).add_modifier(Modifier::BOLD))
-        .block(Block::default().borders(Borders::ALL).border_type(BorderType::Rounded).title("Views"));
+        .highlight_style(
+            Style::default()
+                .fg(theme::BLUE)
+                .add_modifier(Modifier::BOLD),
+        )
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .title("Views"),
+        );
     f.render_widget(tabs, header[1]);
 
     let right = Paragraph::new(Line::from(vec![
-        Span::styled(format!("${:.2}", projected), Style::default().fg(budget_color).add_modifier(Modifier::BOLD)),
-        Span::styled(format!(" / ${:.2} mo", state.budget), Style::default().fg(theme::TEXT)),
-    ])).block(Block::default().borders(Borders::ALL).border_type(BorderType::Rounded).title("FinOps Global"));
+        Span::styled(
+            format!("${:.2}", projected),
+            Style::default()
+                .fg(budget_color)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            format!(" / ${:.2} mo", state.budget),
+            Style::default().fg(theme::TEXT),
+        ),
+    ]))
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .title("FinOps Global"),
+    );
     f.render_widget(right, header[2]);
 }
 
@@ -96,8 +141,16 @@ fn draw_body(f: &mut Frame, area: Rect, state: &AppState) {
         View::ComposeStacks => stacks::draw(f, area, state),
         View::BridgesPlugins => {
             let has_token = crate::app::env_has_tunnel_token(state.featured_product);
-            let token_status = if has_token { "configurado" } else { "ausente (necessário para subir o cloudflared)" };
-            let token_color = if has_token { theme::GREEN } else { theme::YELLOW };
+            let token_status = if has_token {
+                "configurado"
+            } else {
+                "ausente (necessário para subir o cloudflared)"
+            };
+            let token_color = if has_token {
+                theme::GREEN
+            } else {
+                theme::YELLOW
+            };
             let lines = vec![
                 Line::from(Span::styled("Cloudflare Tunnel (container do compose)", Style::default().fg(theme::MAUVE).add_modifier(Modifier::BOLD))),
                 Line::from("• Serviço: cloudflared (imagem cloudflare/cloudflared)"),
@@ -115,7 +168,12 @@ fn draw_body(f: &mut Frame, area: Rect, state: &AppState) {
             let p = Paragraph::new(lines)
                 .wrap(Wrap { trim: true })
                 .style(Style::default().fg(theme::TEXT))
-                .block(Block::default().borders(Borders::ALL).border_type(BorderType::Rounded).title("Bridges & Plugins"));
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .border_type(BorderType::Rounded)
+                        .title("Bridges & Plugins"),
+                );
             f.render_widget(p, area);
         }
         View::EnvLifecycle => envw::draw(f, area, state),
@@ -152,12 +210,17 @@ fn draw_footer(f: &mut Frame, area: Rect, state: &AppState) {
             View::ClusterFinOps => "[Tab] Painel | [↑/↓] Navegar | [1-4] Aba detalhe | [a] Add Nó | [d] Drop Nó | [s] Simular carga | [p] Produto | [1-5] Views | [q] Sair",
             View::ComposeStacks => "[↑/↓] Rolar | [p] Produto | [1-5] Views | [q] Sair",
             View::BridgesPlugins => "[p] Produto | [1-5] Views | [q] Sair",
-            View::EnvLifecycle => if state.env_editing { "[Enter] Salvar valor | [Esc] Cancelar edição | (digitando)" } else { "[↑/↓] Variável | [Enter] Editar | [g] Gerar de exemplo | [r] Recarregar | [w] Salvar .env | [p] Produto | [1-5] Views | [q] Sair" },
+            View::EnvLifecycle => if state.env_editing { "[Enter] Salvar valor | [Esc] Cancelar edição | (digitando)" } else { "[↑/↓] Variável | [Enter] Editar | [g] Exemplo | [n] Gerar segredo | [v] Revelar | [r] Recarregar | [w] Salvar .env | [p] Produto | [1-5] Views | [q] Sair" },
             View::Operations => "[↑/↓/←/→] Ação | [Enter] Executar | [u] Up | [x] Down | [m] Migrar | [k] Status | [o] Logs | [p] Produto | [1-5] Views | [q] Sair",
         },
     };
     let p = Paragraph::new(text)
         .style(Style::default().fg(theme::SUBTEXT))
-        .block(Block::default().borders(Borders::ALL).border_type(BorderType::Rounded).title("Atalhos"));
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .title("Atalhos"),
+        );
     f.render_widget(p, area);
 }

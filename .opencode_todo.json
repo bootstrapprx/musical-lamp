@@ -1,27 +1,32 @@
 [
   {
-    "content": "Mapear o estado atual da TUI, compose e tunnel Cloudflare",
+    "id": "discover",
+    "content": "Understand the existing app and the extra code to merge",
     "status": "completed",
-    "activeForm": "Mapeando o estado atual do projeto"
+    "priority": "high"
   },
   {
-    "content": "Ajustar compose e fluxo do tunnel para subir como container",
+    "id": "merge-capabilities",
+    "content": "Bring the useful settings and operations features into the app",
     "status": "completed",
-    "activeForm": "Ajustando o tunnel no compose"
+    "priority": "high"
   },
   {
-    "content": "Pedir o token do tunnel quando faltar antes da tela ou na aba certa",
+    "id": "build-interface",
+    "content": "Shape the screen to show servers, containers, costs, and controls clearly",
     "status": "completed",
-    "activeForm": "Pedindo o token do tunnel quando faltar"
+    "priority": "high"
   },
   {
-    "content": "Refinar a interface para bater com o que foi pedido",
+    "id": "clean-and-test",
+    "content": "Remove leftover code and make sure the app builds and runs checks",
     "status": "completed",
-    "activeForm": "Refinando a interface"
+    "priority": "high"
   },
   {
-    "content": "Testar, corrigir erros e revisar o que ainda falta",
+    "id": "final-review",
+    "content": "Review what is done and note anything still uncertain",
     "status": "completed",
-    "activeForm": "Testando e revisando o resultado"
+    "priority": "medium"
   }
 ]

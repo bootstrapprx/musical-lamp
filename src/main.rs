@@ -1,6 +1,7 @@
 mod action;
 mod app;
 mod domain;
+mod ops_core;
 mod telemetry;
 mod ui;
 
@@ -9,7 +10,9 @@ use std::time::Duration;
 
 use crossterm::event::{DisableMouseCapture, EnableMouseCapture};
 use crossterm::execute;
-use crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
+use crossterm::terminal::{
+    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
+};
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 use tokio::sync::mpsc;
@@ -55,7 +58,9 @@ fn prompt_for_tunnel_token_if_missing(product: Product) -> io::Result<()> {
     }
     let label = product.label();
     println!("Cloudflare Tunnel: o container cloudflared sobe via Docker Compose, mas o token não está configurado para o produto \"{label}\".");
-    println!("Informe o TUNNEL_TOKEN (deixe em branco para pular e configurar depois na aba .env):");
+    println!(
+        "Informe o TUNNEL_TOKEN (deixe em branco para pular e configurar depois na aba .env):"
+    );
     print!("TUNNEL_TOKEN = ");
     io::stdout().flush()?;
     let mut token = String::new();

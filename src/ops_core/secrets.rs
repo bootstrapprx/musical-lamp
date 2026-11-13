@@ -1,17 +1,23 @@
-//! Geracao de segredos com o CSPRNG do sistema operacional (getrandom).
-use crate::error::{Error, Result};
+use std::fmt;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SecretKind {
-    /// `n` bytes aleatorios em hexadecimal (2n caracteres). DB_PASSWORD padrao: Hex(24).
     Hex(usize),
-    /// `n` caracteres [A-Za-z0-9] sem vies (amostragem por rejeicao).
     Alnum(usize),
-    /// `n` bytes aleatorios em base64 URL-safe, sem padding.
     UrlSafe(usize),
 }
 
-pub fn generate(kind: SecretKind) -> Result<String> {
+impl fmt::Display for SecretKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SecretKind::Hex(n) => write!(f, "hex({n})"),
+            SecretKind::Alnum(n) => write!(f, "alnum({n})"),
+            SecretKind::UrlSafe(n) => write!(f, "urlsafe({n})"),
+        }
+    }
+}
+
+pub fn generate(kind: SecretKind) -> Result<String, String> {
     match kind {
         SecretKind::Hex(n) => hex(n),
         SecretKind::Alnum(n) => alnum(n),
@@ -19,25 +25,21 @@ pub fn generate(kind: SecretKind) -> Result<String> {
     }
 }
 
-fn fill(n: usize) -> Result<Vec<u8>> {
+fn fill(n: usize) -> Result<Vec<u8>, String> {
     if n == 0 || n > 1024 {
-        return Err(Error::Invalid(
-            "tamanho do segredo deve estar entre 1 e 1024".into(),
-        ));
+        return Err("tamanho inválido".into());
     }
     let mut buf = vec![0u8; n];
-    getrandom::getrandom(&mut buf)
-        .map_err(|e| Error::Invalid(format!("CSPRNG indisponivel: {e}")))?;
+    getrandom::getrandom(&mut buf).map_err(|e| format!("CSPRNG indisponível: {e}"))?;
     Ok(buf)
 }
 
-pub fn hex(nbytes: usize) -> Result<String> {
+pub fn hex(nbytes: usize) -> Result<String, String> {
     Ok(fill(nbytes)?.iter().map(|b| format!("{b:02x}")).collect())
 }
 
-pub fn alnum(len: usize) -> Result<String> {
+pub fn alnum(len: usize) -> Result<String, String> {
     const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-    // 62 * 4 = 248: bytes >= 248 sao descartados para nao enviesar o modulo.
     let mut out = String::with_capacity(len);
     while out.len() < len {
         for b in fill(len.max(16))? {
@@ -52,7 +54,7 @@ pub fn alnum(len: usize) -> Result<String> {
     Ok(out)
 }
 
-pub fn url_safe(nbytes: usize) -> Result<String> {
+pub fn url_safe(nbytes: usize) -> Result<String, String> {
     const T: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
     let data = fill(nbytes)?;
     let mut out = String::new();
@@ -71,7 +73,6 @@ pub fn url_safe(nbytes: usize) -> Result<String> {
     Ok(out)
 }
 
-/// Tipo padrao de segredo para uma chave conhecida do .env.
 pub fn default_kind_for(key: &str) -> Option<SecretKind> {
     match key {
         "DB_PASSWORD" => Some(SecretKind::Hex(24)),
@@ -79,22 +80,14 @@ pub fn default_kind_for(key: &str) -> Option<SecretKind> {
     }
 }
 
-/// Aviso operacional que a UI deve mostrar ANTES de trocar o valor desta chave.
 pub fn rotation_note(key: &str) -> Option<&'static str> {
     match key {
-        "DB_PASSWORD" => Some(
-            "MYSQL_ROOT_PASSWORD so vale na criacao do volume db-data. Trocar aqui NAO altera a \
-             senha do MariaDB ja inicializado: altere antes com ALTER USER (ou recrie o volume) \
-             e so depois atualize o .env.",
-        ),
-        "TUNNEL_TOKEN" => Some(
-            "Gere o novo token no painel Zero Trust (rotacione o tunnel) e depois reinicie o cloudflared.",
-        ),
+        "DB_PASSWORD" => Some("Trocar DB_PASSWORD no .env não altera a senha do MariaDB já inicializado; ajuste no banco/volume conforme procedimento."),
+        "TUNNEL_TOKEN" => Some("Rotacione o token no painel Cloudflare Zero Trust e reinicie o cloudflared."),
         _ => None,
     }
 }
 
-/// Chaves cujo valor deve ser mascarado na interface.
 pub fn is_secret_key(key: &str) -> bool {
     let k = key.to_ascii_uppercase();
     ["PASSWORD", "TOKEN", "SECRET", "KEY"]
@@ -106,6 +99,6 @@ pub fn mask(value: &str) -> String {
     if value.is_empty() {
         String::new()
     } else {
-        "\u{2022}".repeat(value.chars().count().min(12))
+        "•".repeat(value.chars().count().min(12))
     }
 }

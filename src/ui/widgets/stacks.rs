@@ -15,15 +15,26 @@ pub fn draw(f: &mut Frame, area: Rect, state: &AppState) {
 
     let product = state.featured_product.label();
     let services = [
-        "configurator", "backend", "websocket", "queue-short", "queue-long",
-        "scheduler", "frontend (nginx 8080)", "db (mariadb)", "redis-cache", "redis-queue", "cloudflared",
+        "configurator",
+        "backend",
+        "websocket",
+        "queue-short",
+        "queue-long",
+        "scheduler",
+        "frontend (nginx 8080)",
+        "db (mariadb)",
+        "redis-cache",
+        "redis-queue",
+        "cloudflared",
     ];
     let items: Vec<ListItem> = services
         .iter()
-        .map(|s| ListItem::new(Line::from(vec![
-            Span::styled("• ", Style::default().fg(theme::TEAL)),
-            Span::styled(*s, Style::default().fg(theme::TEXT)),
-        ])))
+        .map(|s| {
+            ListItem::new(Line::from(vec![
+                Span::styled("• ", Style::default().fg(theme::TEAL)),
+                Span::styled(*s, Style::default().fg(theme::TEXT)),
+            ]))
+        })
         .collect();
     let left = List::new(items).block(
         Block::default()
@@ -64,16 +75,49 @@ pub fn draw(f: &mut Frame, area: Rect, state: &AppState) {
         "Operações: n/d".into()
     };
     let info = vec![
-        Line::from(vec![Span::styled("Produto em destaque: ", Style::default().fg(theme::SUBTEXT)), Span::styled(product, Style::default().fg(theme::MAUVE).add_modifier(Modifier::BOLD))]),
-        Line::from(vec![Span::styled("Env: ", Style::default().fg(theme::SUBTEXT)), Span::styled(env_path, Style::default().fg(theme::TEXT))]),
-        Line::from(vec![Span::styled("Estado .env: ", Style::default().fg(theme::SUBTEXT)), Span::styled(if dirty { "alterações pendentes" } else { "sincronizado" }, Style::default().fg(if dirty { theme::YELLOW } else { theme::GREEN }))]),
-        Line::from(vec![Span::styled("Última ação .env: ", Style::default().fg(theme::SUBTEXT)), Span::styled(env_status, Style::default().fg(theme::TEXT))]),
+        Line::from(vec![
+            Span::styled("Produto em destaque: ", Style::default().fg(theme::SUBTEXT)),
+            Span::styled(
+                product,
+                Style::default()
+                    .fg(theme::MAUVE)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled("Env: ", Style::default().fg(theme::SUBTEXT)),
+            Span::styled(env_path, Style::default().fg(theme::TEXT)),
+        ]),
+        Line::from(vec![
+            Span::styled("Estado .env: ", Style::default().fg(theme::SUBTEXT)),
+            Span::styled(
+                if dirty {
+                    "alterações pendentes"
+                } else {
+                    "sincronizado"
+                },
+                Style::default().fg(if dirty { theme::YELLOW } else { theme::GREEN }),
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled("Última ação .env: ", Style::default().fg(theme::SUBTEXT)),
+            Span::styled(env_status, Style::default().fg(theme::TEXT)),
+        ]),
         Line::from(""),
-        Line::from(vec![Span::styled(ops_line, Style::default().fg(theme::PEACH))]),
-        Line::from(Span::styled("Use [4] para ciclo de vida do .env e [5] para ciclo de vida do stack.", Style::default().fg(theme::SUBTEXT))),
+        Line::from(vec![Span::styled(
+            ops_line,
+            Style::default().fg(theme::PEACH),
+        )]),
+        Line::from(Span::styled(
+            "Use [4] para ciclo de vida do .env e [5] para ciclo de vida do stack.",
+            Style::default().fg(theme::SUBTEXT),
+        )),
     ];
-    let info_p = Paragraph::new(info)
-        .wrap(Wrap { trim: true })
-        .block(Block::default().borders(Borders::ALL).border_type(BorderType::Rounded).title("Contexto do Produto"));
+    let info_p = Paragraph::new(info).wrap(Wrap { trim: true }).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .title("Contexto do Produto"),
+    );
     f.render_widget(info_p, right_chunks[1]);
 }

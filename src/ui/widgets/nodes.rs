@@ -13,12 +13,19 @@ pub fn draw_nodes(f: &mut Frame, area: Rect, state: &AppState, focused: bool) {
         .iter()
         .map(|n| {
             let status = if n.online { "●" } else { "○" };
-            let color = if n.online { theme::GREEN } else { theme::SUBTEXT };
+            let color = if n.online {
+                theme::GREEN
+            } else {
+                theme::SUBTEXT
+            };
             let line = Line::from(vec![
                 Span::styled(format!("{status} "), Style::default().fg(color)),
                 Span::styled(n.display_name(), Style::default().fg(theme::TEXT)),
                 Span::raw("  "),
-                Span::styled(format!("${:.2}/mo", n.monthly_cost), Style::default().fg(theme::PEACH)),
+                Span::styled(
+                    format!("${:.2}/mo", n.monthly_cost),
+                    Style::default().fg(theme::PEACH),
+                ),
             ]);
             ListItem::new(line)
         })
@@ -31,11 +38,17 @@ pub fn draw_nodes(f: &mut Frame, area: Rect, state: &AppState, focused: bool) {
         .title("NODES - VPS Pool");
     let list = List::new(items)
         .block(block)
-        .highlight_style(Style::default().bg(theme::OVERLAY).add_modifier(Modifier::BOLD))
+        .highlight_style(
+            Style::default()
+                .bg(theme::OVERLAY)
+                .add_modifier(Modifier::BOLD),
+        )
         .highlight_symbol("› ");
     let mut st = ListState::default();
     if !state.nodes.is_empty() {
-        st.select(Some(state.selected_node.min(state.nodes.len().saturating_sub(1))));
+        st.select(Some(
+            state.selected_node.min(state.nodes.len().saturating_sub(1)),
+        ));
     }
     f.render_stateful_widget(list, area, &mut st);
 }
