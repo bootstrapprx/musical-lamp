@@ -37,6 +37,7 @@ pub enum Modal {
     None,
     AddNode(AddNodeForm),
     DropNode { confirm: bool },
+    TunnelToken { input: String, product: Product },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -252,6 +253,9 @@ impl AppState {
         if matches!(self.modal, Modal::DropNode { .. }) {
             return self.handle_drop_node_key(key);
         }
+        if matches!(self.modal, Modal::TunnelToken { .. }) {
+            return self.handle_tunnel_token_key(key);
+        }
         if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
             return Some(Action::Quit);
         }
@@ -263,7 +267,14 @@ impl AppState {
 
         match key.code {
             KeyCode::Char('q') => Some(Action::Quit),
-            KeyCode::Char('p') => { self.featured_product = self.featured_product.toggle(); self.clamp_env_selection(); None }
+            KeyCode::Char('p') => {
+                self.featured_product = self.featured_product.toggle();
+                self.clamp_env_selection();
+                if self.view == View::BridgesPlugins && !env_has_tunnel_token(self.featured_product) {
+                    self.modal = Modal::TunnelToken { input: String::new(), product: self.featured_product };
+                }
+                None
+            }
             KeyCode::Char('1') => {
                 if self.view == View::ClusterFinOps && self.focus == FocusPane::Detail { self.detail_tab = DetailTab::Logs; }
                 else { self.view = View::ClusterFinOps; }
@@ -276,7 +287,12 @@ impl AppState {
             }
             KeyCode::Char('3') => {
                 if self.view == View::ClusterFinOps && self.focus == FocusPane::Detail { self.detail_tab = DetailTab::ComposeYaml; }
-                else { self.view = View::BridgesPlugins; }
+                else {
+                    self.view = View::BridgesPlugins;
+                    if !env_has_tunnel_token(self.featured_product) {
+                        self.modal = Modal::TunnelToken { input: String::new(), product: self.featured_product };
+                    }
+                }
                 None
             }
             KeyCode::Char('4') => {
@@ -568,6 +584,32 @@ impl AppState {
         None
     }
 
+    fn handle_tunnel_token_key(&mut self, key: KeyEvent) -> Option<Action> {
+        let (product, input_snapshot) = if let Modal::TunnelToken { product, input } = &self.modal {
+            (*product, input.clone())
+        } else {
+            return None;
+        };
+        match key.code {
+            KeyCode::Esc => { self.modal = Modal::None; }
+            KeyCode::Backspace => {
+                if let Modal::TunnelToken { ref mut input, .. } = self.modal { input.pop(); }
+            }
+            KeyCode::Enter => {
+                let token = input_snapshot.trim().to_string();
+                if !token.is_empty() && set_tunnel_token(product, &token).is_ok() {
+                    self.env_states.insert(product, load_env_state(product));
+                }
+                self.modal = Modal::None;
+            }
+            KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                if let Modal::TunnelToken { ref mut input, .. } = self.modal { input.push(c); }
+            }
+            _ => {}
+        }
+        None
+    }
+
     pub fn compose_yaml_for_selected(&self) -> String {
         let Some(node) = self.selected_node() else { return "# no node selected".into(); };
         let containers: Vec<&Container> = self.containers.iter().filter(|c| c.node_id == node.id).collect();
@@ -587,15 +629,15 @@ impl AppState {
     }
 }
 
-fn product_env_path(product: Product) -> String {
+pub fn product_env_path(product: Product) -> String {
     format!("products/{}/.env", product.label())
 }
 
-fn product_env_example_path(product: Product) -> String {
+pub fn product_env_example_path(product: Product) -> String {
     format!("products/{}/.env.example", product.label())
 }
 
-fn parse_env_vars(content: &str) -> Vec<EnvVar> {
+pub fn parse_env_vars(content: &str) -> Vec<EnvVar> {
     let mut vars = Vec::new();
     let mut pending_comment: Option<String> = None;
     for line in content.lines() {
@@ -617,7 +659,7 @@ fn parse_env_vars(content: &str) -> Vec<EnvVar> {
     vars
 }
 
-fn render_env_file(vars: &[EnvVar]) -> String {
+pub fn render_env_file(vars: &[EnvVar]) -> String {
     let mut out = String::new();
     for v in vars {
         if let Some(c) = &v.comment {
@@ -628,7 +670,7 @@ fn render_env_file(vars: &[EnvVar]) -> String {
     out
 }
 
-fn load_env_state(product: Product) -> ProductEnv {
+pub fn load_env_state(product: Product) -> ProductEnv {
     let env_path = product_env_path(product);
     let example_path = product_env_example_path(product);
     let (path_hint, content, last_action) = if Path::new(&env_path).exists() {
@@ -646,4 +688,28 @@ fn load_env_state(product: Product) -> ProductEnv {
     };
     let vars = if content.is_empty() { Vec::new() } else { parse_env_vars(&content) };
     ProductEnv { product, path_hint, vars, dirty: false, last_action }
+}
+
+pub fn env_has_tunnel_token(product: Product) -> bool {
+    let env = load_env_state(product);
+    env.vars
+        .iter()
+        .find(|v| v.key == "TUNNEL_TOKEN")
+        .map(|v| !v.value.trim().is_empty())
+        .unwrap_or(false)
+}
+
+pub fn set_tunnel_token(product: Product, token: &str) -> std::io::Result<()> {
+    let mut env = load_env_state(product);
+    if let Some(var) = env.vars.iter_mut().find(|v| v.key == "TUNNEL_TOKEN") {
+        var.value = token.to_string();
+    } else {
+        env.vars.push(EnvVar {
+            key: "TUNNEL_TOKEN".into(),
+            value: token.to_string(),
+            comment: Some("Cloudflare Tunnel token".into()),
+        });
+    }
+    let content = render_env_file(&env.vars);
+    fs::write(product_env_path(product), content)
 }

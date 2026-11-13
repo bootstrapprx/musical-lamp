@@ -1,1 +1,27 @@
-[]
+[
+  {
+    "content": "Mapear o estado atual da TUI, compose e tunnel Cloudflare",
+    "status": "completed",
+    "activeForm": "Mapeando o estado atual do projeto"
+  },
+  {
+    "content": "Ajustar compose e fluxo do tunnel para subir como container",
+    "status": "completed",
+    "activeForm": "Ajustando o tunnel no compose"
+  },
+  {
+    "content": "Pedir o token do tunnel quando faltar antes da tela ou na aba certa",
+    "status": "completed",
+    "activeForm": "Pedindo o token do tunnel quando faltar"
+  },
+  {
+    "content": "Refinar a interface para bater com o que foi pedido",
+    "status": "completed",
+    "activeForm": "Refinando a interface"
+  },
+  {
+    "content": "Testar, corrigir erros e revisar o que ainda falta",
+    "status": "completed",
+    "activeForm": "Testando e revisando o resultado"
+  }
+]

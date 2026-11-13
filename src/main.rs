@@ -4,7 +4,7 @@ mod domain;
 mod telemetry;
 mod ui;
 
-use std::io;
+use std::io::{self, Write};
 use std::time::Duration;
 
 use crossterm::event::{DisableMouseCapture, EnableMouseCapture};
@@ -16,10 +16,13 @@ use tokio::sync::mpsc;
 
 use crate::action::{Action, Event};
 use crate::app::AppState;
+use crate::domain::Product;
 use crate::telemetry::{MockTelemetryProvider, TelemetryProvider};
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
+    prompt_for_tunnel_token_if_missing(Product::Accounting)?;
+
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
@@ -44,6 +47,27 @@ async fn main() -> io::Result<()> {
     terminal.show_cursor()?;
 
     res
+}
+
+fn prompt_for_tunnel_token_if_missing(product: Product) -> io::Result<()> {
+    if app::env_has_tunnel_token(product) {
+        return Ok(());
+    }
+    let label = product.label();
+    println!("Cloudflare Tunnel: o container cloudflared sobe via Docker Compose, mas o token não está configurado para o produto \"{label}\".");
+    println!("Informe o TUNNEL_TOKEN (deixe em branco para pular e configurar depois na aba .env):");
+    print!("TUNNEL_TOKEN = ");
+    io::stdout().flush()?;
+    let mut token = String::new();
+    io::stdin().read_line(&mut token)?;
+    let token = token.trim().to_string();
+    if token.is_empty() {
+        println!("Token não informado. Você poderá configurar em products/{label}/.env ou na aba [4] .env antes de subir o stack com cloudflared.");
+        return Ok(());
+    }
+    app::set_tunnel_token(product, &token)?;
+    println!("TUNNEL_TOKEN salvo em products/{label}/.env.");
+    Ok(())
 }
 
 async fn run_app(

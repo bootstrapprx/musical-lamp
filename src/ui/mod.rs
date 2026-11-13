@@ -36,6 +36,7 @@ pub fn draw(f: &mut Frame, state: &AppState) {
     match &state.modal {
         Modal::AddNode(form) => modals::draw_add_node(f, size, form),
         Modal::DropNode { confirm } => modals::draw_drop_node(f, size, state, *confirm),
+        Modal::TunnelToken { input, product } => modals::draw_tunnel_token(f, size, *product, input),
         Modal::None => {}
     }
 }
@@ -94,8 +95,24 @@ fn draw_body(f: &mut Frame, area: Rect, state: &AppState) {
         View::ClusterFinOps => draw_cluster(f, area, state),
         View::ComposeStacks => stacks::draw(f, area, state),
         View::BridgesPlugins => {
-            let msg = "Bridges & Plugins: integrações planejadas.\n\nUse [p] para alternar o produto em destaque (accounting/trivia), [4] para gerenciar .env e [5] para operações do stack.";
-            let p = Paragraph::new(msg)
+            let has_token = crate::app::env_has_tunnel_token(state.featured_product);
+            let token_status = if has_token { "configurado" } else { "ausente (necessário para subir o cloudflared)" };
+            let token_color = if has_token { theme::GREEN } else { theme::YELLOW };
+            let lines = vec![
+                Line::from(Span::styled("Cloudflare Tunnel (container do compose)", Style::default().fg(theme::MAUVE).add_modifier(Modifier::BOLD))),
+                Line::from("• Serviço: cloudflared (imagem cloudflare/cloudflared)"),
+                Line::from("• Execução: via Docker Compose (common/compose.base.yaml), rede edge isolada e IP fixo"),
+                Line::from(vec![
+                    Span::raw("• TUNNEL_TOKEN: "),
+                    Span::styled(token_status, Style::default().fg(token_color)),
+                ]),
+                Line::from(""),
+                Line::from("Ao abrir esta aba, se o token não existir para o produto em destaque, a TUI solicita o preenchimento."),
+                Line::from("Você também pode gerar/editar/salvar o .env na aba [4] (variável TUNNEL_TOKEN)."),
+                Line::from(""),
+                Line::from(Span::styled("Outras bridges/plugins: integrações adicionais planejadas.", Style::default().fg(theme::SUBTEXT))),
+            ];
+            let p = Paragraph::new(lines)
                 .wrap(Wrap { trim: true })
                 .style(Style::default().fg(theme::TEXT))
                 .block(Block::default().borders(Borders::ALL).border_type(BorderType::Rounded).title("Bridges & Plugins"));
@@ -130,6 +147,7 @@ fn draw_footer(f: &mut Frame, area: Rect, state: &AppState) {
     let text = match state.modal {
         Modal::AddNode(_) => "[Tab] Campo | [Enter] Confirmar | [Esc] Cancelar",
         Modal::DropNode { .. } => "[Tab/←/→] Selecionar | [Enter] Confirmar | [Esc/N] Cancelar",
+        Modal::TunnelToken { .. } => "[Enter] Salvar token | [Esc] Pular por agora",
         Modal::None => match state.view {
             View::ClusterFinOps => "[Tab] Painel | [↑/↓] Navegar | [1-4] Aba detalhe | [a] Add Nó | [d] Drop Nó | [s] Simular carga | [p] Produto | [1-5] Views | [q] Sair",
             View::ComposeStacks => "[↑/↓] Rolar | [p] Produto | [1-5] Views | [q] Sair",

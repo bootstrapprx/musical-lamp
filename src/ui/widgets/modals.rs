@@ -5,6 +5,7 @@ use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph, Wrap};
 use ratatui::Frame;
 
 use crate::app::{AddField, AddNodeForm, AppState};
+use crate::domain::Product;
 use crate::ui::theme;
 
 fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
@@ -102,4 +103,46 @@ pub fn draw_drop_node(f: &mut Frame, area: Rect, state: &AppState, confirm: bool
         Line::from(Span::styled("Tab/←/→ alterna, Enter confirma, Esc cancela", Style::default().fg(theme::SUBTEXT))),
     ];
     f.render_widget(Paragraph::new(msg).wrap(Wrap { trim: true }), inner);
+}
+
+pub fn draw_tunnel_token(f: &mut Frame, area: Rect, product: Product, input: &str) {
+    let area = centered_rect(65, 35, area);
+    f.render_widget(Clear, area);
+    let block = Block::default()
+        .title(format!("Cloudflare Tunnel — {}", product.label()))
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(theme::BLUE));
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(2), Constraint::Length(3), Constraint::Min(2)])
+        .split(inner);
+
+    let info = Paragraph::new(vec![
+        Line::from(Span::styled(
+            "O túnel sobe como container (cloudflared) via Docker Compose. Informe o TUNNEL_TOKEN para este produto.",
+            Style::default().fg(theme::TEXT),
+        )),
+        Line::from(Span::styled(
+            "O valor será salvo em products/<produto>/.env.",
+            Style::default().fg(theme::SUBTEXT),
+        )),
+    ]).wrap(Wrap { trim: true });
+    f.render_widget(info, rows[0]);
+
+    let input_p = Paragraph::new(if input.is_empty() { "<cole ou digite o token>".to_string() } else { input.to_string() })
+        .style(Style::default().fg(if input.is_empty() { theme::SUBTEXT } else { theme::TEXT }))
+        .block(Block::default().borders(Borders::ALL).border_type(BorderType::Rounded).border_style(Style::default().fg(theme::GREEN)).title("TUNNEL_TOKEN"));
+    f.render_widget(input_p, rows[1]);
+
+    let hint = Paragraph::new(Line::from(vec![
+        Span::styled("Enter", Style::default().fg(theme::GREEN).add_modifier(Modifier::BOLD)),
+        Span::raw(" salvar token | "),
+        Span::styled("Esc", Style::default().fg(theme::YELLOW).add_modifier(Modifier::BOLD)),
+        Span::raw(" pular e configurar depois na aba [4] .env"),
+    ])).style(Style::default().fg(theme::SUBTEXT)).wrap(Wrap { trim: true });
+    f.render_widget(hint, rows[2]);
 }
