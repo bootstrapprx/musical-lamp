@@ -3,6 +3,7 @@ mod app;
 mod domain;
 mod event;
 mod ops_core;
+mod orchestration;
 mod telemetry;
 mod ui;
 
@@ -37,7 +38,7 @@ async fn main() -> io::Result<()> {
     let provider: Box<dyn TelemetryProvider + Send> = Box::new(MockTelemetryProvider::new());
     let mut state = AppState::new(provider);
 
-    let res = run_app(&mut terminal, &mut state, &mut rx).await;
+    let res = run_app(&mut terminal, &mut state, &mut rx, tx.clone()).await;
 
     disable_raw_mode()?;
     execute!(
@@ -54,6 +55,7 @@ async fn run_app(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     state: &mut AppState,
     rx: &mut mpsc::UnboundedReceiver<Event>,
+    tx: mpsc::UnboundedSender<Event>,
 ) -> io::Result<()> {
     loop {
         terminal.draw(|f| ui::draw(f, state))?;
@@ -61,8 +63,12 @@ async fn run_app(
             return Ok(());
         }
         if let Some(event) = rx.recv().await {
-            if let Some(Action::Quit) = state.handle_event(event) {
-                state.should_quit = true;
+            match state.handle_event(event) {
+                Some(Action::Quit) => state.should_quit = true,
+                Some(action @ Action::RunOps { .. }) => {
+                    orchestration::spawn_ops_command(tx.clone(), action);
+                }
+                None => {}
             }
         }
     }

@@ -29,26 +29,38 @@ pub fn draw(f: &mut Frame, area: Rect, state: &AppState) {
     let header = vec![
         Line::from(vec![
             Span::styled("Produto: ", Style::default().fg(theme::SUBTEXT)),
-            Span::styled(state.featured_product.label(), Style::default().fg(theme::MAUVE).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                state.featured_product.label(),
+                Style::default().fg(theme::MAUVE).add_modifier(Modifier::BOLD),
+            ),
             Span::raw("   "),
             Span::styled("Estado: ", Style::default().fg(theme::SUBTEXT)),
-            Span::styled(ops.state.label(), Style::default().fg(status_color).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                ops.state.label(),
+                Style::default().fg(status_color).add_modifier(Modifier::BOLD),
+            ),
         ]),
-        Line::from(vec![Span::styled("Última ação: ", Style::default().fg(theme::SUBTEXT)), Span::styled(&ops.last_action, Style::default().fg(theme::TEXT))]),
-        Line::from(Span::styled("Subir, parar, consultar, pré-checar e iniciar configuração (execução simulada com segurança).", Style::default().fg(theme::SUBTEXT))),
+        Line::from(vec![
+            Span::styled("Última ação: ", Style::default().fg(theme::SUBTEXT)),
+            Span::styled(&ops.last_action, Style::default().fg(theme::TEXT)),
+        ]),
+        Line::from(Span::styled(
+            "Subir, parar, consultar, ver logs e migrar executam comandos reais do produto (common/dc.sh).",
+            Style::default().fg(theme::SUBTEXT),
+        )),
     ];
     f.render_widget(Paragraph::new(header).wrap(Wrap { trim: true }).block(Block::default().borders(Borders::ALL).border_type(BorderType::Rounded).title("Operações do Stack")), chunks[0]);
 
     let body = Layout::default().direction(Direction::Horizontal).constraints([Constraint::Percentage(40), Constraint::Percentage(60)]).split(chunks[1]);
 
     let actions = [
-        ("[u] Subir stack", "Inicia os serviços (up -d)"),
-        ("[x] Parar stack", "Para e remove containers (down)"),
-        ("[c] Consultar stack", "Consulta status e serviços"),
-        ("[f] Pre-flight", "Valida .env, arquivos e prontidão"),
+        ("[u] Subir stack", "Executa: common/dc.sh <produto> up -d"),
+        ("[x] Parar stack", "Executa: common/dc.sh <produto> down"),
+        ("[c] Consultar stack", "Executa: common/dc.sh <produto> ps"),
+        ("[f] Pre-flight", "Valida .env, arquivos e prontidão local"),
         ("[i] Onboarding", "Abre/fecha guia inicial"),
-        ("[m] Migrar site", "bench --site <SITE> migrate (ops)"),
-        ("[o] Ver logs", "Consulta logs recentes"),
+        ("[m] Migrar sites", "Executa: bench --site all migrate (ops)"),
+        ("[o] Ver logs", "Executa: common/dc.sh <produto> logs --tail=80"),
     ];
     let items: Vec<ListItem> = actions.iter().enumerate().map(|(i, (title, desc))| {
         let selected = i == state.ops_selected_action;

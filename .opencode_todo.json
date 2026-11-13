@@ -1,7 +1,7 @@
 [
-  {"id":"1","content":"Entender o que já existe e o que falta mudar","status":"completed","priority":"high","activeForm":"Lendo o projeto atual"},
-  {"id":"2","content":"Reorganizar a base da tela e o estado do programa","status":"completed","priority":"high","activeForm":"Reorganizando a base"},
-  {"id":"3","content":"Montar as telas, painéis e janelas de edição pedidas","status":"completed","priority":"high","activeForm":"Montando as telas"},
-  {"id":"4","content":"Dar contexto às operações e facilitar segredos e repositórios","status":"completed","priority":"high","activeForm":"Melhorando as operações"},
-  {"id":"5","content":"Compilar, revisar avisos e ajustar o que faltar","status":"completed","priority":"high","activeForm":"Compilando e ajustando"}
+  {"id":"1","content":"Entender por que as ações aparecem como simuladas","status":"completed","priority":"high","activeForm":"Analisando as ações simuladas"},
+  {"id":"2","content":"Fazer subir, parar e consultar a stack de verdade","status":"completed","priority":"high","activeForm":"Ligando as ações reais"},
+  {"id":"3","content":"Mostrar o andamento e os resultados reais na tela","status":"completed","priority":"high","activeForm":"Mostrando os resultados"},
+  {"id":"4","content":"Ajustar avisos de simulação e checagens","status":"completed","priority":"high","activeForm":"Ajustando avisos"},
+  {"id":"5","content":"Compilar e conferir se está funcionando","status":"completed","priority":"high","activeForm":"Conferindo o resultado"}
 ]

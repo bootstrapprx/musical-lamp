@@ -10,6 +10,7 @@ use crate::domain::{
 };
 use crate::event::{Action, Event};
 use crate::ops_core::{envfile, secrets, validate};
+use crate::orchestration;
 use crate::telemetry::TelemetryProvider;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -256,9 +257,13 @@ impl AppState {
                 p,
                 OpsStatus {
                     product: p,
-                    state: StackState::Running,
-                    last_action: "status ok (mock)".into(),
-                    log_lines: vec![format!("[{}] stack saudável", p.label())],
+                    state: StackState::Stopped,
+                    last_action: "estado inicial: use Consultar para verificar a stack real".into(),
+                    log_lines: vec![format!(
+                        "[{}] pronto para executar ações reais (common/dc.sh {})",
+                        p.label(),
+                        p.label()
+                    )],
                 },
             );
         }
@@ -334,34 +339,71 @@ impl AppState {
         match event {
             Event::Tick => {
                 self.telemetry.tick(&mut self.nodes, &mut self.containers);
-                self.tick_ops_sim();
                 None
             }
             Event::Resize => None,
             Event::Key(key) => self.handle_key(key),
+            Event::OpsLine { product, line } => {
+                self.push_ops_log(product, line);
+                None
+            }
+            Event::OpsFinished {
+                product,
+                action,
+                success,
+                summary,
+            } => {
+                self.apply_ops_finished(product, &action, success, summary);
+                None
+            }
         }
     }
 
-    fn tick_ops_sim(&mut self) {
-        for ops in self.ops_states.values_mut() {
-            match ops.state {
-                StackState::Starting => {
-                    ops.state = StackState::Running;
-                    ops.last_action = "inicialização concluída (simulada)".into();
-                    ops.log_lines.push("[ops] serviços prontos".into());
-                }
-                StackState::Stopping => {
-                    ops.state = StackState::Stopped;
-                    ops.last_action = "parada concluída (simulada)".into();
-                    ops.log_lines.push("[ops] stack parado".into());
-                }
-                _ => {}
-            }
-            if ops.log_lines.len() > 120 {
-                let drain = ops.log_lines.len() - 120;
+    fn push_ops_log(&mut self, product: Product, line: String) {
+        if let Some(ops) = self.ops_states.get_mut(&product) {
+            ops.log_lines.push(line);
+            if ops.log_lines.len() > 300 {
+                let drain = ops.log_lines.len() - 300;
                 ops.log_lines.drain(0..drain);
             }
         }
+    }
+
+    fn apply_ops_finished(&mut self, product: Product, action: &str, success: bool, summary: String) {
+        if let Some(ops) = self.ops_states.get_mut(&product) {
+            ops.last_action = if success {
+                format!("{action}: {summary}")
+            } else {
+                format!("{action}: {summary}")
+            };
+            ops.log_lines.push(format!("[resultado] {summary}"));
+            match action {
+                "up" => {
+                    ops.state = if success {
+                        StackState::Running
+                    } else {
+                        StackState::Degraded
+                    };
+                }
+                "down" => {
+                    ops.state = if success {
+                        StackState::Stopped
+                    } else {
+                        StackState::Degraded
+                    };
+                }
+                "migrate" if !success => {
+                    ops.state = StackState::Degraded;
+                }
+                "status" => {
+                    if success && !matches!(ops.state, StackState::Starting | StackState::Stopping) {
+                        // keep current assumption unless clearly running/stopped unknown; leave as-is
+                    }
+                }
+                _ => {}
+            }
+        }
+        self.refresh_onboarding();
     }
 
     fn handle_key(&mut self, key: KeyEvent) -> Option<Action> {
@@ -466,28 +508,28 @@ impl AppState {
             }
             // Compose Stacks operations / app repos
             KeyCode::Char('u') if self.view == View::ComposeStacks && self.stack_panel == StackPanel::Operations => {
-                self.run_ops_action("up"); None
+                return self.run_ops_action("up");
             }
             KeyCode::Char('x') if self.view == View::ComposeStacks && self.stack_panel == StackPanel::Operations => {
-                self.run_ops_action("down"); None
+                return self.run_ops_action("down");
             }
             KeyCode::Char('c') if self.view == View::ComposeStacks && self.stack_panel == StackPanel::Operations => {
-                self.run_ops_action("status"); None
+                return self.run_ops_action("status");
             }
             KeyCode::Char('f') if self.view == View::ComposeStacks && self.stack_panel == StackPanel::Operations => {
-                self.run_ops_action("preflight"); None
+                return self.run_ops_action("preflight");
             }
             KeyCode::Char('i') if self.view == View::ComposeStacks && self.stack_panel == StackPanel::Operations => {
-                self.run_ops_action("onboarding"); None
+                return self.run_ops_action("onboarding");
             }
             KeyCode::Char('m') if self.view == View::ComposeStacks && self.stack_panel == StackPanel::Operations => {
-                self.run_ops_action("migrate"); None
+                return self.run_ops_action("migrate");
             }
             KeyCode::Char('o') if self.view == View::ComposeStacks && self.stack_panel == StackPanel::Operations => {
-                self.run_ops_action("logs"); None
+                return self.run_ops_action("logs");
             }
             KeyCode::Enter if self.view == View::ComposeStacks && self.stack_panel == StackPanel::Operations => {
-                self.run_selected_ops_action(); None
+                return self.run_selected_ops_action();
             }
             KeyCode::Char('a') if self.view == View::ComposeStacks && self.stack_panel == StackPanel::AppRepos => {
                 self.modal = Modal::AddApp(AddAppForm::default()); None
@@ -729,56 +771,67 @@ impl AppState {
         self.refresh_onboarding();
     }
 
-    fn run_ops_action(&mut self, action: &str) {
+    fn run_ops_action(&mut self, action: &str) -> Option<Action> {
         let product = self.featured_product;
-        let label = product.label().to_string();
         match action {
-            "preflight" => { self.run_preflight(); return; }
+            "preflight" => {
+                self.run_preflight();
+                return None;
+            }
             "onboarding" => {
                 self.show_onboarding = !self.show_onboarding;
                 self.refresh_onboarding();
                 if let Some(ops) = self.ops_states.get_mut(&product) {
-                    ops.last_action = if self.show_onboarding { "onboarding aberto".into() } else { "onboarding fechado".into() };
+                    ops.last_action = if self.show_onboarding {
+                        "onboarding aberto".into()
+                    } else {
+                        "onboarding fechado".into()
+                    };
                 }
-                return;
+                return None;
             }
             _ => {}
         }
-        if let Some(ops) = self.ops_states.get_mut(&product) {
-            match action {
-                "up" => {
-                    ops.state = StackState::Starting;
-                    ops.last_action = "subir stack solicitado (simulado, execução segura)".into();
-                    ops.log_lines.push(format!("[subir] common/dc.sh {label} up -d"));
+
+        if let Some(cmd_action) = orchestration::build_ops_action(product, action) {
+            if let Some(ops) = self.ops_states.get_mut(&product) {
+                match action {
+                    "up" => {
+                        ops.state = StackState::Starting;
+                        ops.last_action = "subindo a stack (execução real em andamento)".into();
+                    }
+                    "down" => {
+                        ops.state = StackState::Stopping;
+                        ops.last_action = "parando a stack (execução real em andamento)".into();
+                    }
+                    "status" => {
+                        ops.last_action = "consultando estado real da stack".into();
+                    }
+                    "logs" => {
+                        ops.last_action = "consultando logs reais da stack".into();
+                    }
+                    "migrate" => {
+                        ops.last_action = "executando migração real (bench --site all migrate)".into();
+                    }
+                    _ => {}
                 }
-                "down" => {
-                    ops.state = StackState::Stopping;
-                    ops.last_action = "parar stack solicitado (simulado, execução segura)".into();
-                    ops.log_lines.push(format!("[parar] common/dc.sh {label} down"));
-                }
-                "migrate" => {
-                    ops.last_action = "migração solicitada (simulada)".into();
-                    ops.log_lines.push(format!("[migrar] common/dc.sh {label} run --rm ops bench --site <SITE> migrate"));
-                }
-                "status" => {
-                    ops.last_action = "consulta da stack atualizada (simulada)".into();
-                    ops.log_lines.push(format!("[consultar] common/dc.sh {label} ps  → estado: {}", ops.state.label()));
-                }
-                "logs" => {
-                    ops.last_action = "logs consultados (simulados)".into();
-                    ops.log_lines.push(format!("[consultar] common/dc.sh {label} logs --tail=50"));
-                }
-                _ => {}
             }
+            return Some(cmd_action);
         }
+        None
     }
 
-    fn run_selected_ops_action(&mut self) {
+    fn run_selected_ops_action(&mut self) -> Option<Action> {
         let action = match self.ops_selected_action {
-            0 => "up", 1 => "down", 2 => "status", 3 => "preflight",
-            4 => "onboarding", 5 => "migrate", _ => "logs",
+            0 => "up",
+            1 => "down",
+            2 => "status",
+            3 => "preflight",
+            4 => "onboarding",
+            5 => "migrate",
+            _ => "logs",
         };
-        self.run_ops_action(action);
+        self.run_ops_action(action)
     }
 
     pub fn run_preflight(&mut self) {
@@ -870,7 +923,7 @@ impl AppState {
             OnboardingStep { title: "2. Gerar e ajustar .env".into(), done: has_env && !critical_missing, detail: if !has_env { "Em [3] Bridges & Plugins > Env use [g] para gerar do exemplo".into() } else if critical_missing { "Preencha IMAGE_REF, DB_PASSWORD e TUNNEL_TOKEN".into() } else { "Variáveis essenciais presentes".into() } },
             OnboardingStep { title: "3. Configurar túnel Cloudflare".into(), done: tunnel_ok, detail: if tunnel_ok { "TUNNEL_TOKEN configurado".into() } else { "Informe TUNNEL_TOKEN em [3] Bridges & Plugins".into() } },
             OnboardingStep { title: "4. Rodar pré-checagem".into(), done: pre_ok, detail: if pre_ok { "Pré-checagem sem erros bloqueantes".into() } else { "Em [2] Compose Stacks > Operações execute [f]".into() } },
-            OnboardingStep { title: "5. Subir e consultar a stack".into(), done: matches!(self.ops_states.get(&product).map(|o| o.state), Some(StackState::Running)), detail: "Use [u] Subir e [c] Consultar em [2] > Operações".into() },
+            OnboardingStep { title: "5. Subir e consultar a stack".into(), done: matches!(self.ops_states.get(&product).map(|o| o.state), Some(StackState::Running)), detail: "Use [u] Subir e [c] Consultar em [2] > Operações (execução real).".into() },
         ];
     }
 

@@ -7,9 +7,9 @@
   },
   "stack": "Rust + egui (eframe)",
   "status": "ready",
-  "note": "Ready: all 2 checks pass. 1 question about the original is still open.",
+  "note": "Ready: all 2 checks pass.",
   "created_ms": 1794595666281,
-  "updated_ms": 1794607919857,
+  "updated_ms": 1794608372148,
   "checks": [
     {
       "round": 1,
@@ -154,12 +154,30 @@
       "note": "`cargo test --quiet` passed.",
       "artifacts": [],
       "at_ms": 1794607919852
+    },
+    {
+      "round": 9,
+      "check": "build",
+      "passed": true,
+      "similarity": null,
+      "note": "`cargo build --quiet` passed.",
+      "artifacts": [],
+      "at_ms": 1794608346053
+    },
+    {
+      "round": 9,
+      "check": "own-tests",
+      "passed": true,
+      "similarity": null,
+      "note": "`cargo test --quiet` passed.",
+      "artifacts": [],
+      "at_ms": 1794608346868
     }
   ],
   "agent_session": null,
   "agent_session_by": "opencode",
   "allowed_actions": [],
-  "last_reply": "Corrigi o cadastro de aplicativos do bench para que ele não apague nem sobrescreva a lista quando o arquivo de apps estiver inválido ou não puder ser lido: nesses casos o arquivo é preservado, a tela avisa o problema e a adição ou remoção só acontece se a leitura e a gravação concluírem com sucesso, mostrando falhas quando não for possível salvar. Ajustei também as janelas de adicionar/remover nó e de cadastrar app para se adaptarem melhor a terminais menores e aumentei o tamanho mínimo aceito da tela, evitando que campos e instruções fiquem cortados em alturas reduzidas.\n\nO restante da interface e as operações de stack continuam no estado atual do projeto (operações simuladas, sem integração real de execução remota nesta mudança). Ainda vale conferir em uso real se os textos dos avisos ficam claros no fluxo do dia a dia. Um bom próximo passo é pedir a conexão das ações de stack e da telemetria a provedores reais de Docker/SSH, mantendo a simulação como alternativa quando não houver acesso.",
+  "last_reply": "Fiz as ações da tela deixarem de ser simuladas: agora subir, parar, consultar, ver os registros e migrar a pilha do produto executam de verdade e mostram o andamento e o resultado na própria tela. Removi as mensagens de simulação automática, então o estado passa a refletir o que realmente aconteceu em cada ação. A checagem prévia e o guia de configuração continuam funcionando para validar o que falta antes de iniciar.\n\nNão consegui ver a imagem que você enviou, então a correção foi feita com base no que aparecia como simulado no programa; se ainda houver algum botão específico se comportando como antes, me diga qual. Como próximo passo, você pode pedir para testar a consulta e os registros com o ambiente ligado e ajustar a migração para um site específico quando necessário.",
   "asset_budget_usd": 5.0,
   "generate_assets": false,
   "app_in_root": true,
