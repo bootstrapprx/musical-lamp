@@ -1,0 +1,230 @@
+# Compose base UNICO para os produtos Kodoo (trivia, accounting).
+# Sempre via:  common/dc.sh <produto> <comando>      (projeto: kodoo-<produto>)
+# Cada produto tem seu .env, volumes, redes, banco, Redis e tunnel proprios.
+#
+# Redes
+#   edge : somente cloudflared + frontend (IP fixo do cloudflared)
+#   app  : frontend, backend, websocket, workers, scheduler, db, redis
+# Nenhuma porta e publicada no host. Entrada: Cloudflare -> cloudflared -> frontend:8080.
+#
+# --- Primeiro deploy ---------------------------------------------------------
+#   common/dc.sh <p> up -d db redis-cache redis-queue
+#   common/dc.sh <p> up -d configurator backend frontend websocket queue-short queue-long scheduler
+#   # criar um site (pede a senha do Administrator):
+#   common/dc.sh <p> run --rm ops bash -c 'bench new-site SITE \
+#       --mariadb-user-host-login-scope="%" --db-root-password "$DB_PASSWORD" \
+#       && bench --site SITE set-config host_name https://SITE'
+#   common/dc.sh <p> run --rm ops bench --site SITE install-app APP [APP...]
+#   common/dc.sh <p> up -d cloudflared
+#
+# --- Release (atualizacao) ---------------------------------------------------
+#   1. backup de todos os sites  2. trocar IMAGE_REF  3. up -d  4. migrar:
+#   common/dc.sh <p> run --rm ops bench --site SITE migrate     (um por site/lote)
+#   Migracao NUNCA acontece no start dos containers.
+
+x-app-base: &app_base
+  image: ${IMAGE_REF:?Defina IMAGE_REF no .env}
+  pull_policy: ${PULL_POLICY:-missing}
+  restart: unless-stopped
+  security_opt:
+    - no-new-privileges:true
+  networks:
+    - app
+  volumes:
+    - sites:/home/frappe/frappe-bench/sites
+    - logs:/home/frappe/frappe-bench/logs
+
+x-after-configurator: &after_configurator
+  configurator:
+    condition: service_completed_successfully
+
+services:
+  # ---- configuracao comum (roda e termina) -----------------------------------
+  configurator:
+    <<: *app_base
+    restart: on-failure
+    entrypoint: ["bash", "-c"]
+    command:
+      - >
+        ls -1 apps > sites/apps.txt;
+        bench set-config -g db_host $$DB_HOST;
+        bench set-config -gp db_port $$DB_PORT;
+        bench set-config -g redis_cache "redis://$$REDIS_CACHE";
+        bench set-config -g redis_queue "redis://$$REDIS_QUEUE";
+        bench set-config -g redis_socketio "redis://$$REDIS_QUEUE";
+        bench set-config -gp socketio_port $$SOCKETIO_PORT;
+        if [ -n "$$CHROMIUM_PATH" ]; then bench set-config -g chromium_path "$$CHROMIUM_PATH"; fi;
+    environment:
+      DB_HOST: db
+      DB_PORT: "3306"
+      REDIS_CACHE: redis-cache:6379
+      REDIS_QUEUE: redis-queue:6379
+      SOCKETIO_PORT: "9000"
+      CHROMIUM_PATH: ${CHROMIUM_PATH:-}
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # ---- aplicacao --------------------------------------------------------------
+  backend:
+    <<: *app_base
+    depends_on: *after_configurator
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8000"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 20s
+
+  websocket:
+    <<: *app_base
+    command: ["node", "/home/frappe/frappe-bench/apps/frappe/socketio.js"]
+    depends_on: *after_configurator
+
+  queue-short:
+    <<: *app_base
+    command: ["bench", "worker", "--queue", "short,default"]
+    depends_on: *after_configurator
+
+  queue-long:
+    <<: *app_base
+    command: ["bench", "worker", "--queue", "long,default,short"]
+    depends_on: *after_configurator
+
+  scheduler:
+    <<: *app_base
+    command: ["bench", "schedule"]
+    depends_on: *after_configurator
+
+  frontend:
+    <<: *app_base
+    command: ["nginx-entrypoint.sh"]
+    cap_drop:
+      - ALL
+    networks:
+      - edge
+      - app
+    environment:
+      BACKEND: backend:8000
+      SOCKETIO: websocket:9000
+      # Vazio => o entrypoint usa $$host (multi-tenant).
+      FRAPPE_SITE_NAME_HEADER: ${FRAPPE_SITE_NAME_HEADER:-}
+      # IP real do visitante: so confiamos no cloudflared (IP fixo na rede edge).
+      UPSTREAM_REAL_IP_ADDRESS: ${CLOUDFLARED_IP:?Defina CLOUDFLARED_IP no .env}
+      UPSTREAM_REAL_IP_HEADER: CF-Connecting-IP
+      UPSTREAM_REAL_IP_RECURSIVE: "off"
+      CLIENT_MAX_BODY_SIZE: ${CLIENT_MAX_BODY_SIZE:-50m}
+    depends_on:
+      - backend
+      - websocket
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+
+  # ---- operacoes manuais (perfil ops; nao sobe com "up") ------------------------
+  ops:
+    <<: *app_base
+    profiles: ["ops"]
+    restart: "no"
+    environment:
+      DB_PASSWORD: ${DB_PASSWORD:?Defina DB_PASSWORD no .env}
+    depends_on:
+      configurator:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+
+  # ---- dados -------------------------------------------------------------------
+  db:
+    image: ${MARIADB_IMAGE:-mariadb:11.8}
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - app
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --skip-character-set-client-handshake
+      - --skip-innodb-read-only-compressed
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:?Defina DB_PASSWORD no .env}
+    healthcheck:
+      test: ["CMD-SHELL", "mariadb-admin ping -h 127.0.0.1 --password=\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    volumes:
+      - db-data:/var/lib/mysql
+
+  redis-cache:
+    image: ${REDIS_IMAGE:-redis:8-alpine}
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - app
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis-queue:
+    image: ${REDIS_IMAGE:-redis:8-alpine}
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - app
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    volumes:
+      - redis-queue-data:/data
+
+  # ---- ingresso (um conector por produto) -----------------------------------------
+  cloudflared:
+    image: cloudflare/cloudflared:${CLOUDFLARED_VERSION:?Fixe CLOUDFLARED_VERSION no .env}
+    restart: unless-stopped
+    command: tunnel --no-autoupdate --metrics 127.0.0.1:2000 run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?Defina TUNNEL_TOKEN no .env}
+    networks:
+      edge:
+        ipv4_address: ${CLOUDFLARED_IP:?Defina CLOUDFLARED_IP no .env}
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "cloudflared", "tunnel", "--metrics", "127.0.0.1:2000", "ready"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    depends_on:
+      frontend:
+        condition: service_healthy
+
+networks:
+  edge:
+    ipam:
+      config:
+        # ip_range: o Docker so atribui IPs dinamicos dentro dele; o IP fixo do
+        # cloudflared fica FORA, senao o frontend poderia "roubar" esse endereco.
+        - subnet: ${EDGE_SUBNET:?Defina EDGE_SUBNET no .env}
+          ip_range: ${EDGE_IP_RANGE:?Defina EDGE_IP_RANGE no .env}
+  app: {}
+
+volumes:
+  sites:
+  logs:
+  db-data:
+  redis-queue-data:

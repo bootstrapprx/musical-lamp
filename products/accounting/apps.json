@@ -1,0 +1,10 @@
+[
+  {
+    "url": "https://github.com/frappe/erpnext",
+    "branch": "<TAG_DO_ERPNEXT_V16>"
+  },
+  {
+    "url": "<GIT_URL_DO_APP_CONTABIL>",
+    "branch": "<TAG_OU_COMMIT_DO_APP_CONTABIL>"
+  }
+]
