@@ -1,5 +1,6 @@
 use ratatui::style::Color;
 
+// Catppuccin Mocha
 pub const BASE: Color = Color::Rgb(30, 30, 46); // #1e1e2e
 pub const MANTLE: Color = Color::Rgb(24, 24, 37); // #181825
 pub const TEXT: Color = Color::Rgb(205, 214, 244); // #cdd6f4
@@ -34,3 +35,5 @@ pub fn budget_color(projected: f64, budget: f64) -> Color {
         GREEN
     }
 }
+
+// Border focus is handled inline via BLUE/OVERLAY in widgets.

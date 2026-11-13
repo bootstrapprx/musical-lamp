@@ -1,38 +1,7 @@
 [
-  {
-    "id": "1",
-    "content": "Entender como a interface atual funciona e o que falta",
-    "status": "completed",
-    "priority": "high"
-  },
-  {
-    "id": "2",
-    "content": "Adicionar as opções para subir, parar e consultar a pilha",
-    "status": "completed",
-    "priority": "high"
-  },
-  {
-    "id": "3",
-    "content": "Criar a checagem prévia antes de iniciar",
-    "status": "completed",
-    "priority": "high"
-  },
-  {
-    "id": "4",
-    "content": "Criar o passo a passo inicial de configuração",
-    "status": "completed",
-    "priority": "high"
-  },
-  {
-    "id": "5",
-    "content": "Ajustar a aparência e os controles para tudo ficar claro",
-    "status": "completed",
-    "priority": "medium"
-  },
-  {
-    "id": "6",
-    "content": "Compilar e testar o resultado",
-    "status": "completed",
-    "priority": "high"
-  }
+  {"id":"1","content":"Entender o que já existe e o que falta mudar","status":"completed","priority":"high","activeForm":"Lendo o projeto atual"},
+  {"id":"2","content":"Reorganizar a base da tela e o estado do programa","status":"completed","priority":"high","activeForm":"Reorganizando a base"},
+  {"id":"3","content":"Montar as telas, painéis e janelas de edição pedidas","status":"completed","priority":"high","activeForm":"Montando as telas"},
+  {"id":"4","content":"Dar contexto às operações e facilitar segredos e repositórios","status":"completed","priority":"high","activeForm":"Melhorando as operações"},
+  {"id":"5","content":"Compilar, revisar avisos e ajustar o que faltar","status":"completed","priority":"high","activeForm":"Compilando e ajustando"}
 ]

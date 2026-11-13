@@ -75,18 +75,39 @@ pub fn url_safe(nbytes: usize) -> Result<String, String> {
 }
 
 pub fn default_kind_for(key: &str) -> Option<SecretKind> {
-    match key {
-        "DB_PASSWORD" => Some(SecretKind::Hex(24)),
-        _ => None,
+    let k = key.to_ascii_uppercase();
+    if k == "DB_PASSWORD" || k.ends_with("_PASSWORD") || k.contains("PASSWORD") {
+        return Some(SecretKind::Hex(24));
     }
+    if k == "TUNNEL_TOKEN" || k.ends_with("_TOKEN") || k.contains("TOKEN") {
+        // Tokens are often externally issued; generate a strong placeholder/value when user asks.
+        return Some(SecretKind::UrlSafe(32));
+    }
+    if k.ends_with("_SECRET") || k.contains("SECRET") {
+        return Some(SecretKind::Hex(32));
+    }
+    if k.ends_with("_KEY") || k.contains("API_KEY") || k.contains("PRIVATE_KEY") {
+        return Some(SecretKind::UrlSafe(32));
+    }
+    None
+}
+
+pub fn can_auto_generate(key: &str) -> bool {
+    default_kind_for(key).is_some()
 }
 
 pub fn rotation_note(key: &str) -> Option<&'static str> {
-    match key {
-        "DB_PASSWORD" => Some("Trocar DB_PASSWORD no .env não altera a senha do MariaDB já inicializado; ajuste no banco/volume conforme procedimento."),
-        "TUNNEL_TOKEN" => Some("Rotacione o token no painel Cloudflare Zero Trust e reinicie o cloudflared."),
-        _ => None,
+    let k = key.to_ascii_uppercase();
+    if k == "DB_PASSWORD" {
+        return Some("Trocar DB_PASSWORD no .env não altera a senha do MariaDB já inicializado; ajuste no banco/volume conforme procedimento.");
     }
+    if k == "TUNNEL_TOKEN" || k.contains("TUNNEL") {
+        return Some("Se for token do Cloudflare, copie o valor emitido no painel Zero Trust; valores gerados aqui servem como placeholder/local.");
+    }
+    if k.contains("TOKEN") || k.contains("SECRET") || k.contains("KEY") || k.contains("PASSWORD") {
+        return Some("Revise onde este segredo é usado antes de rotacionar em produção.");
+    }
+    None
 }
 
 pub fn is_secret_key(key: &str) -> bool {

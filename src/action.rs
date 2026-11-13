@@ -1,13 +1,2 @@
-use crossterm::event::KeyEvent;
+// Action/Event are defined in crate::event; module kept for TEA structure compatibility.
 
-#[derive(Debug, Clone)]
-pub enum Event {
-    Key(KeyEvent),
-    Resize,
-    Tick,
-}
-
-#[derive(Debug, Clone)]
-pub enum Action {
-    Quit,
-}

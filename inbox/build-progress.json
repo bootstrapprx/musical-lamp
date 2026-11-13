@@ -1,9 +1,9 @@
 {
   "version": 2,
-  "fingerprint": "86889434907e3ae7c69a539eb8ecbd9163c26320920b3c6fce1c66e35b133d43",
-  "unchanged_turns": 1,
+  "fingerprint": "4068891218b8fd94d2bd42d768570a294765f133481d86445974ffa26b14927b",
+  "unchanged_turns": 0,
   "checked": {
-    "key": "3011282d932237a29c3d0f338dee65916690c60f718feea69ce10f79275623d9",
-    "round": 6
+    "key": "cab12fb0819e13f2c42b28739d871f4f90e787fbea6e5b0b4f9c12bd8d7187a3",
+    "round": 7
   }
 }
