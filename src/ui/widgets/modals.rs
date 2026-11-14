@@ -10,6 +10,7 @@ use crate::ui::{layout, theme};
 pub fn draw_add_node(f: &mut Frame, area: Rect, form: &AddNodeForm) {
     let area = layout::centered_rect(60, 50, area);
     f.render_widget(Clear, area);
+    f.render_widget(Block::default().style(Style::default().bg(theme::MANTLE)), area);
     let block = Block::default()
         .title("Add Node [a]")
         .borders(Borders::ALL)
@@ -114,6 +115,7 @@ fn draw_field(f: &mut Frame, area: Rect, label: &str, value: &str, active: bool)
 pub fn draw_drop_node(f: &mut Frame, area: Rect, state: &AppState, confirm: bool) {
     let area = layout::centered_rect(58, 40, area);
     f.render_widget(Clear, area);
+    f.render_widget(Block::default().style(Style::default().bg(theme::MANTLE)), area);
     let block = Block::default()
         .title("Drop Node [d]")
         .borders(Borders::ALL)
@@ -190,6 +192,7 @@ pub fn draw_drop_node(f: &mut Frame, area: Rect, state: &AppState, confirm: bool
 pub fn draw_add_app(f: &mut Frame, area: Rect, form: &AddAppForm) {
     let area = layout::centered_rect(75, 70, area);
     f.render_widget(Clear, area);
+    f.render_widget(Block::default().style(Style::default().bg(theme::MANTLE)), area);
     let block = Block::default()
         .title("Adicionar app no bench (apps.json)")
         .borders(Borders::ALL)
@@ -199,20 +202,41 @@ pub fn draw_add_app(f: &mut Frame, area: Rect, form: &AddAppForm) {
     f.render_widget(block, area);
 
     let compact = inner.height < 10;
+    let has_error = form.error.is_some();
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints(if compact {
+            if has_error {
+                [
+                    Constraint::Length(1),
+                    Constraint::Length(2),
+                    Constraint::Length(2),
+                    Constraint::Length(1),
+                    Constraint::Min(1),
+                ]
+            } else {
+                [
+                    Constraint::Length(1),
+                    Constraint::Length(2),
+                    Constraint::Length(2),
+                    Constraint::Length(0),
+                    Constraint::Min(1),
+                ]
+            }
+        } else if has_error {
             [
-                Constraint::Length(1),
                 Constraint::Length(2),
+                Constraint::Length(3),
+                Constraint::Length(3),
                 Constraint::Length(2),
-                Constraint::Min(1),
+                Constraint::Min(2),
             ]
         } else {
             [
                 Constraint::Length(2),
                 Constraint::Length(3),
                 Constraint::Length(3),
+                Constraint::Length(0),
                 Constraint::Min(2),
             ]
         })
@@ -279,6 +303,15 @@ pub fn draw_add_app(f: &mut Frame, area: Rect, form: &AddAppForm) {
     f.render_widget(url_p, rows[1]);
     f.render_widget(branch_p, rows[2]);
 
+    if let Some(err) = &form.error {
+        let err_p = Paragraph::new(Line::from(Span::styled(
+            err.clone(),
+            Style::default().fg(theme::RED).add_modifier(Modifier::BOLD),
+        )))
+        .wrap(Wrap { trim: true });
+        f.render_widget(err_p, rows[3]);
+    }
+
     let hint_text = if compact {
         "Tab alterna | Enter adiciona | Esc cancela"
     } else {
@@ -287,5 +320,5 @@ pub fn draw_add_app(f: &mut Frame, area: Rect, form: &AddAppForm) {
     let hint = Paragraph::new(hint_text)
         .style(Style::default().fg(theme::SUBTEXT))
         .wrap(Wrap { trim: true });
-    f.render_widget(hint, rows[3]);
+    f.render_widget(hint, rows[4]);
 }

@@ -99,6 +99,7 @@ pub struct AddAppForm {
     pub url: String,
     pub branch: String,
     pub field: AppField,
+    pub error: Option<String>,
 }
 
 impl Default for AddAppForm {
@@ -107,6 +108,7 @@ impl Default for AddAppForm {
             url: String::new(),
             branch: String::new(),
             field: AppField::Url,
+            error: None,
         }
     }
 }
@@ -1894,32 +1896,46 @@ impl AppState {
 
     // --- Add bench app modal ---
     fn handle_add_app_key(&mut self, key: KeyEvent) -> Option<Action> {
-        let Modal::AddApp(ref mut form) = self.modal else {
+        if !matches!(self.modal, Modal::AddApp(_)) {
             return None;
-        };
+        }
         match key.code {
             KeyCode::Esc => {
                 self.modal = Modal::None;
             }
             KeyCode::Tab => {
-                form.field = match form.field {
-                    AppField::Url => AppField::Branch,
-                    AppField::Branch => AppField::Url,
-                };
+                if let Modal::AddApp(ref mut form) = self.modal {
+                    form.field = match form.field {
+                        AppField::Url => AppField::Branch,
+                        AppField::Branch => AppField::Url,
+                    };
+                }
             }
             KeyCode::Backspace => {
-                match form.field {
-                    AppField::Url => form.url.pop(),
-                    AppField::Branch => form.branch.pop(),
-                };
+                if let Modal::AddApp(ref mut form) = self.modal {
+                    match form.field {
+                        AppField::Url => {
+                            form.url.pop();
+                        }
+                        AppField::Branch => {
+                            form.branch.pop();
+                        }
+                    }
+                    form.error = None;
+                }
             }
             KeyCode::Enter => {
-                let url = form.url.trim().to_string();
-                let branch = form.branch.trim().to_string();
+                let (url, branch) = if let Modal::AddApp(ref form) = self.modal {
+                    (form.url.trim().to_string(), form.branch.trim().to_string())
+                } else {
+                    return None;
+                };
                 if url.is_empty() || branch.is_empty() {
-                    self.set_apps_status(
-                        "informe a URL do repositório e a referência (tag/commit)".into(),
-                    );
+                    if let Modal::AddApp(ref mut form) = self.modal {
+                        form.error = Some(
+                            "Preencha a URL do repositório e a referência (tag/commit).".into(),
+                        );
+                    }
                     return None;
                 }
                 match self.add_app_entry(&url, &branch) {
@@ -1927,14 +1943,20 @@ impl AppState {
                         self.modal = Modal::None;
                     }
                     Err(e) => {
-                        self.set_apps_status(format!("não foi possível salvar apps.json: {e}"));
+                        if let Modal::AddApp(ref mut form) = self.modal {
+                            form.error =
+                                Some(format!("Não foi possível salvar apps.json: {e}"));
+                        }
                     }
                 }
             }
             KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
-                match form.field {
-                    AppField::Url => form.url.push(c),
-                    AppField::Branch => form.branch.push(c),
+                if let Modal::AddApp(ref mut form) = self.modal {
+                    match form.field {
+                        AppField::Url => form.url.push(c),
+                        AppField::Branch => form.branch.push(c),
+                    }
+                    form.error = None;
                 }
             }
             _ => {}
