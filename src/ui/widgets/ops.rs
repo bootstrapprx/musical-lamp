@@ -192,6 +192,14 @@ pub fn draw(f: &mut Frame, area: Rect, state: &AppState) {
                 )));
             }
         }
+        if !state.doctor.failed.is_empty() {
+            for e in state.doctor.failed.iter().rev().take(4).rev() {
+                lines.push(Line::from(Span::styled(
+                    format!("✖ {e}"),
+                    Style::default().fg(theme::RED),
+                )));
+            }
+        }
         if state.doctor.issues.is_empty() {
             lines.push(Line::from(Span::styled(
                 "Nenhum problema pendente detectado.",

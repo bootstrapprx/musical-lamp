@@ -9,7 +9,7 @@
   "status": "ready",
   "note": "Ready: all 2 checks pass.",
   "created_ms": 1794595666281,
-  "updated_ms": 1794680660825,
+  "updated_ms": 1794680849226,
   "checks": [
     {
       "round": 1,
@@ -244,13 +244,31 @@
       "note": "`cargo test --quiet` passed.",
       "artifacts": [],
       "at_ms": 1794680660821
+    },
+    {
+      "round": 14,
+      "check": "build",
+      "passed": true,
+      "similarity": null,
+      "note": "`cargo build --quiet` passed.",
+      "artifacts": [],
+      "at_ms": 1794680848782
+    },
+    {
+      "round": 14,
+      "check": "own-tests",
+      "passed": true,
+      "similarity": null,
+      "note": "`cargo test --quiet` passed.",
+      "artifacts": [],
+      "at_ms": 1794680849218
     }
   ],
   "agent_session": null,
   "agent_session_by": "opencode",
   "capture_deep": true,
   "allowed_actions": [],
-  "last_reply": "Corrigi o problema do diagnóstico ao alternar de produto: agora, sempre que você troca de produto na tela, a verificação do Doctor é refeita na hora para o produto que ficou selecionado. Assim o relatório, os problemas e as correções sugeridas passam a corresponder à configuração que está sendo exibida, em vez de manter o resultado do produto anterior.\n\nTambém verifiquei que o projeto continua compilando sem erros ou avisos após a mudança. O restante da evolução maior descrita na missão (nova arquitetura e layout completo da interface) não foi implementado nesta etapa, já que o pedido foi priorizar essa correção do Doctor. Se quiser, no próximo passo posso avançar na refatoração completa da interface conforme a especificação.",
+  "last_reply": "Corrigi o diagnóstico para que ele pare de tratar falhas como sucesso: quando não consegue salvar o arquivo de configuração, criar a cópia inicial ou ajustar as permissões, isso passa a ser registrado como erro separado, não entra na contagem de correções aplicadas e aparece destacado em vermelho na tela.\n\nAs correções que realmente funcionam continuam marcadas como aplicadas em verde, e o resumo final agora distingue correções concluídas de falhas, deixando claro se algo não pôde ser ajustado. A varredura após alternar de produto continua sendo refeita para mostrar o diagnóstico correto do produto atual.\n\nNão avancei na reconstrução completa da interface e da arquitetura descritas no pedido maior; foquei nesta correção para que o resultado do diagnóstico seja confiável. Se quiser, posso seguir com a evolução da tela de orquestração e custos conforme essa especificação.",
   "asset_budget_usd": 5.0,
   "generate_assets": false,
   "app_in_root": true,

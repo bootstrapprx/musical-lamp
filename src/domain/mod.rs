@@ -140,6 +140,7 @@ pub struct DoctorIssue {
 pub struct DoctorReport {
     pub issues: Vec<DoctorIssue>,
     pub applied: Vec<String>,
+    pub failed: Vec<String>,
     pub summary: String,
 }
 

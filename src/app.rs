@@ -936,6 +936,7 @@ impl AppState {
         let mut report = DoctorReport {
             issues: Vec::new(),
             applied: Vec::new(),
+            failed: Vec::new(),
             summary: String::new(),
         };
 
@@ -1171,12 +1172,12 @@ impl AppState {
                                     .applied
                                     .push("Permissões do .env ajustadas para 600".into()),
                                 Err(e) => report
-                                    .applied
+                                    .failed
                                     .push(format!("Falha ao ajustar permissões do .env: {e}")),
                             }
                             changed = true;
                         }
-                        Err(e) => report.applied.push(format!("Falha ao criar .env: {e}")),
+                        Err(e) => report.failed.push(format!("Falha ao criar .env: {e}")),
                     }
                 }
             }
@@ -1286,11 +1287,11 @@ impl AppState {
                                 .applied
                                 .push("Permissões do .env ajustadas para 600".into()),
                             Err(e) => report
-                                .applied
+                                .failed
                                 .push(format!("Falha ao ajustar permissões do .env: {e}")),
                         }
                     }
-                    Err(e) => report.applied.push(format!("Falha ao salvar .env: {e}")),
+                    Err(e) => report.failed.push(format!("Falha ao salvar .env: {e}")),
                 }
             } else if env_path.exists()
                 && report
@@ -1304,7 +1305,7 @@ impl AppState {
                         .applied
                         .push("Permissões do .env ajustadas para 600".into()),
                     Err(e) => report
-                        .applied
+                        .failed
                         .push(format!("Falha ao ajustar permissões do .env: {e}")),
                 }
             }
@@ -1314,8 +1315,10 @@ impl AppState {
             self.refresh_onboarding();
 
             let applied = report.applied.clone();
+            let failed = report.failed.clone();
             self.run_doctor_scan(false);
             self.doctor.applied = applied;
+            self.doctor.failed = failed;
             let errs = self
                 .doctor
                 .issues
@@ -1328,20 +1331,34 @@ impl AppState {
                 .iter()
                 .filter(|i| matches!(i.severity, PreflightStatus::Warn))
                 .count();
-            self.doctor.summary = if self.doctor.applied.is_empty() {
-                format!(
+            self.doctor.summary = match (
+                self.doctor.applied.is_empty(),
+                self.doctor.failed.is_empty(),
+            ) {
+                (true, true) => format!(
                     "Doctor: nenhuma correção automática aplicada ({errs} erro(s), {warns} aviso(s))."
-                )
-            } else {
-                format!(
+                ),
+                (false, true) => format!(
                     "Doctor: {} correção(ões) aplicada(s). Estado atual: {errs} erro(s), {warns} aviso(s).",
                     self.doctor.applied.len()
-                )
+                ),
+                (true, false) => format!(
+                    "Doctor: {} falha(s) ao aplicar correções. Estado atual: {errs} erro(s), {warns} aviso(s).",
+                    self.doctor.failed.len()
+                ),
+                (false, false) => format!(
+                    "Doctor: {} correção(ões) aplicada(s), {} falha(s). Estado atual: {errs} erro(s), {warns} aviso(s).",
+                    self.doctor.applied.len(),
+                    self.doctor.failed.len()
+                ),
             };
             if let Some(ops) = self.ops_states.get_mut(&product) {
                 ops.last_action = self.doctor.summary.clone();
                 for a in &self.doctor.applied {
                     ops.log_lines.push(format!("[doctor] {a}"));
+                }
+                for fmsg in &self.doctor.failed {
+                    ops.log_lines.push(format!("[doctor][erro] {fmsg}"));
                 }
             }
             if self.doctor_selected >= self.doctor.issues.len() && !self.doctor.issues.is_empty() {
@@ -1362,10 +1379,23 @@ impl AppState {
             .count();
         let fixable = report.issues.iter().filter(|i| i.fix.is_some()).count();
         report.summary = if apply_fixes {
-            if report.applied.is_empty() {
-                format!("Doctor: nenhuma correção automática aplicada ({errs} erro(s), {warns} aviso(s)).")
-            } else {
-                format!("Doctor: {} correção(ões) aplicada(s). Restam {errs} erro(s), {warns} aviso(s).", report.applied.len())
+            match (report.applied.is_empty(), report.failed.is_empty()) {
+                (true, true) => format!(
+                    "Doctor: nenhuma correção automática aplicada ({errs} erro(s), {warns} aviso(s))."
+                ),
+                (false, true) => format!(
+                    "Doctor: {} correção(ões) aplicada(s). Restam {errs} erro(s), {warns} aviso(s).",
+                    report.applied.len()
+                ),
+                (true, false) => format!(
+                    "Doctor: {} falha(s) ao aplicar correções. Restam {errs} erro(s), {warns} aviso(s).",
+                    report.failed.len()
+                ),
+                (false, false) => format!(
+                    "Doctor: {} correção(ões) aplicada(s), {} falha(s). Restam {errs} erro(s), {warns} aviso(s).",
+                    report.applied.len(),
+                    report.failed.len()
+                ),
             }
         } else if report.issues.is_empty() {
             "Doctor: nenhum problema encontrado.".into()
@@ -1377,6 +1407,9 @@ impl AppState {
             ops.last_action = report.summary.clone();
             for a in &report.applied {
                 ops.log_lines.push(format!("[doctor] {a}"));
+            }
+            for fmsg in &report.failed {
+                ops.log_lines.push(format!("[doctor][erro] {fmsg}"));
             }
         }
         self.doctor = report;
