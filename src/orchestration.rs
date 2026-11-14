@@ -35,6 +35,8 @@ pub fn build_ops_action(product: Product, action: &str) -> Option<Action> {
                 p,
                 "run".into(),
                 "--rm".into(),
+                // sem TTY: o compose nao pode capturar o terminal da TUI
+                "-T".into(),
                 "ops".into(),
                 "bench".into(),
                 "--site".into(),
@@ -72,6 +74,8 @@ pub fn spawn_ops_command(tx: mpsc::UnboundedSender<Event>, req: Action) {
 
         let mut child = match Command::new(&cmd)
             .args(&args)
+            .stdin(Stdio::null())
+            .kill_on_drop(true)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()

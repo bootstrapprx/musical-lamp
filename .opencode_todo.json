@@ -1,5 +1,7 @@
 [
-  {"content":"Entender o problema de salvar valores com Enter","status":"completed","activeForm":"Entendendo o problema"},
-  {"content":"Ajustar o comportamento da tecla Enter na interface","status":"completed","activeForm":"Ajustando a tecla Enter"},
-  {"content":"Verificar se o projeto compila corretamente","status":"completed","activeForm":"Verificando a compilação"}
+  {"id":"1","content":"Reviewing what the app already does","status":"completed","priority":"high"},
+  {"id":"2","content":"Applying the requested fixes","status":"completed","priority":"high"},
+  {"id":"3","content":"Shaping the screen to match the requested design","status":"completed","priority":"high"},
+  {"id":"4","content":"Building and checking the app","status":"completed","priority":"high"},
+  {"id":"5","content":"Summarizing what is ready","status":"completed","priority":"medium"}
 ]

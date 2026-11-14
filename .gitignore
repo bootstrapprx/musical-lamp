@@ -143,3 +143,7 @@ kodoo-ops/slt/target/debug/deps/slt-3ecc096f390d76c6.d
 kodoo-ops/slt/target/debug/deps/smallvec-00837ea738e87e0f.d
 kodoo-ops/slt/target/debug/incremental/slt-0ydjhouvfvcsa/s-ho2vieq482-029lhbq.lock
 products/accounting/.env
+
+# backups do TUI
+products/*/apps.json.bak-*
+products/*/apps.json.tmp

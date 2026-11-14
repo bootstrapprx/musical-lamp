@@ -1980,7 +1980,31 @@ impl AppState {
     fn write_apps_json(&self, path: &Path, arr: &[serde_json::Value]) -> Result<(), String> {
         let out = serde_json::to_string_pretty(arr)
             .map_err(|e| format!("falha ao preparar apps.json: {e}"))?;
-        fs::write(path, out + "\n").map_err(|e| format!("falha ao salvar {}: {e}", path.display()))
+        // backup (ultimos 5) + escrita atomica: um 'd' sem querer ou uma queda no meio nao perde o manifesto
+        if path.exists() {
+            let ts = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            let _ = fs::copy(path, path.with_file_name(format!("apps.json.bak-{ts}")));
+            if let Some(dir) = path.parent() {
+                let mut baks: Vec<String> = fs::read_dir(dir)
+                    .map(|rd| {
+                        rd.filter_map(|e| e.ok())
+                            .filter_map(|e| e.file_name().into_string().ok())
+                            .filter(|n| n.starts_with("apps.json.bak-"))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                baks.sort();
+                while baks.len() > 5 {
+                    let _ = fs::remove_file(dir.join(baks.remove(0)));
+                }
+            }
+        }
+        let tmp = path.with_file_name("apps.json.tmp");
+        fs::write(&tmp, out + "\n").map_err(|e| format!("falha ao salvar {}: {e}", tmp.display()))?;
+        fs::rename(&tmp, path).map_err(|e| format!("falha ao salvar {}: {e}", path.display()))
     }
 
     fn set_apps_status(&mut self, msg: String) {

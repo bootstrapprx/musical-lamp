@@ -7,7 +7,8 @@ mod orchestration;
 mod telemetry;
 mod ui;
 
-use std::io;
+use std::io::{self, IsTerminal};
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use crossterm::event::{DisableMouseCapture, EnableMouseCapture};
@@ -23,8 +24,61 @@ use crate::app::AppState;
 use crate::event::{Action, Event};
 use crate::telemetry::{MockTelemetryProvider, TelemetryProvider};
 
+/// Raiz = diretorio que contem common/compose.base.yaml. Ordem: argumento, MUSICAL_LAMP_ROOT,
+/// subindo a partir do cwd e, por fim, a partir do executavel (target/debug/...).
+fn find_root() -> Option<PathBuf> {
+    let has_marker = |d: &Path| d.join("common").join("compose.base.yaml").is_file();
+    let walk_up = |start: PathBuf| -> Option<PathBuf> {
+        let mut cur = Some(start.as_path());
+        while let Some(d) = cur {
+            if has_marker(d) {
+                return Some(d.to_path_buf());
+            }
+            cur = d.parent();
+        }
+        None
+    };
+    if let Some(arg) = std::env::args().nth(1).filter(|a| !a.starts_with('-')) {
+        let p = PathBuf::from(arg);
+        return has_marker(&p).then_some(p);
+    }
+    if let Ok(r) = std::env::var("MUSICAL_LAMP_ROOT") {
+        let p = PathBuf::from(r);
+        return has_marker(&p).then_some(p);
+    }
+    std::env::current_dir()
+        .ok()
+        .and_then(walk_up)
+        .or_else(|| std::env::current_exe().ok().and_then(|e| e.parent().map(|d| d.to_path_buf())).and_then(walk_up))
+}
+
+/// Restaura o terminal se houver panic (senao o shell fica em modo raw/tela alternativa).
+fn install_panic_hook() {
+    let prev = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let _ = disable_raw_mode();
+        let _ = execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture);
+        prev(info);
+    }));
+}
+
 #[tokio::main]
 async fn main() -> io::Result<()> {
+    if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
+        eprintln!("musical-lamp-tui precisa de um terminal interativo (TTY); stdin/stdout nao sao um terminal.");
+        std::process::exit(2);
+    }
+    match find_root() {
+        Some(root) => std::env::set_current_dir(root)?,
+        None => {
+            eprintln!(
+                "nao encontrei common/compose.base.yaml. Rode a partir do repositorio, \
+                 passe o diretorio como argumento ou defina MUSICAL_LAMP_ROOT."
+            );
+            std::process::exit(2);
+        }
+    }
+    install_panic_hook();
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
