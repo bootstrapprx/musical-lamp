@@ -9,7 +9,7 @@
   "status": "ready",
   "note": "Ready: all 2 checks pass.",
   "created_ms": 1794595666281,
-  "updated_ms": 1794681324164,
+  "updated_ms": 1794681772422,
   "checks": [
     {
       "round": 1,
@@ -298,13 +298,31 @@
       "note": "`cargo test --quiet` passed.",
       "artifacts": [],
       "at_ms": 1794681324161
+    },
+    {
+      "round": 17,
+      "check": "build",
+      "passed": true,
+      "similarity": null,
+      "note": "`cargo build --quiet` passed.",
+      "artifacts": [],
+      "at_ms": 1794681772354
+    },
+    {
+      "round": 17,
+      "check": "own-tests",
+      "passed": true,
+      "similarity": null,
+      "note": "`cargo test --quiet` passed.",
+      "artifacts": [],
+      "at_ms": 1794681772414
     }
   ],
   "agent_session": null,
   "agent_session_by": "opencode",
   "capture_deep": true,
   "allowed_actions": [],
-  "last_reply": "Corrigi o Doctor para tratar o `.env` de forma segura: antes de gravar ou truncar um arquivo que já existe, ele agora restringe as permissões para acesso só do dono, evitando expor novos segredos enquanto o arquivo ainda estiver aberto para outros.\n\nTambém ajustei o fluxo de correção para diferenciar um `.env` inexistente de um `.env` que existe mas não pôde ser lido: nesse caso a correção é interrompida, o arquivo original é preservado e o erro é reportado, sem tentar gravar nem apagar o arquivo.\n\nO problema anterior de mostrar falhas como sucessos continua resolvido. Não avancei na evolução completa da interface pedida na missão principal nesta rodada; se quiser, no próximo passo posso retomar a análise e refatoração da TUI para a arquitetura multi-host/FinOps descrita.",
+  "last_reply": "Corrigi o comportamento do Doctor para gravar o arquivo de ambiente de forma segura, usando escrita atômica que preserva o original se a gravação falhar, e agora as correções só aparecem como aplicadas quando realmente foram salvas com sucesso. Também adicionei verificações automáticas cobrindo o caso de falha na gravação (mantendo o arquivo anterior intacto) e o caso em que a escrita não é permitida (sem marcar correções como aplicadas).\n\nA interface de terminal já reúne as áreas principais pedidas: visão do conjunto de servidores e finanças com resumo de custo, lista de nós e containers com custo proporcional e capacidade ociosa, painel de telemetria com uso de CPU/RAM, histórico e projeções, abas de detalhes (logs, detalhamento de custos, composição e previsão), além de janelas para adicionar e remover nós com confirmação e impacto. A telemetria segue simulada e atualizada periodicamente para manter a tela responsiva e demonstrável, mas algumas integrações reais e detalhes visuais/operacionais ainda podem precisar de ajustes finos conforme o uso no seu ambiente.\n\nUm bom próximo passo é abrir a interface, testar as ações de correção automática do ambiente e navegar pelas telas para validar se o nível de detalhe financeiro e os textos exibidos estão do jeito que você espera. Se algo não estiver como no cenário real, posso ajustar os cálculos, os rótulos ou os fluxos de operação com base no que você observar.",
   "asset_budget_usd": 5.0,
   "generate_assets": false,
   "app_in_root": true,

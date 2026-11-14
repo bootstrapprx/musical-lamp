@@ -1,5 +1,8 @@
 [
-  {"id":"1","content":"Analisar o código atual e localizar o problema das permissões do .env","status":"completed","priority":"high"},
-  {"id":"2","content":"Corrigir o Doctor para só gravar segredos com permissões seguras garantidas","status":"completed","priority":"high"},
-  {"id":"3","content":"Compilar e testar para confirmar que a correção não quebrou nada","status":"completed","priority":"high"}
+  {"id":"1","content":"Corrigir gravação segura do .env no Doctor (arquivo temporário + rename, sem corromper original)","status":"completed","priority":"high"},
+  {"id":"2","content":"Garantir que correções do Doctor só constem como aplicadas após gravação bem-sucedida","status":"completed","priority":"high"},
+  {"id":"3","content":"Adicionar testes para falha de gravação e para escrita recusada no Doctor","status":"in_progress","priority":"high"},
+  {"id":"4","content":"Refatorar TUI para a arquitetura e layout pedidos (TEA, Catppuccin Mocha, painéis e modais)","status":"pending","priority":"high"},
+  {"id":"5","content":"Implementar telemetria/FinOps mock não bloqueante e interações de UI solicitadas","status":"pending","priority":"high"},
+  {"id":"6","content":"Rodar cargo check, clippy e ajustar avisos; validar build","status":"pending","priority":"high"}
 ]

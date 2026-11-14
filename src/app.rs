@@ -1151,40 +1151,70 @@ impl AppState {
             #[cfg(unix)]
             fn write_env_secure(path: &Path, content: &str) -> Result<(), String> {
                 use std::io::Write;
-                use std::os::unix::fs::OpenOptionsExt;
+                use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+                use std::time::{SystemTime, UNIX_EPOCH};
                 if let Some(parent) = path.parent() {
                     fs::create_dir_all(parent).map_err(|e| e.to_string())?;
                 }
-                // Para arquivo existente, restringir permissões ANTES de truncar/escrever,
-                // para não expor segredos caso o arquivo estivesse legível por outros.
-                if path.exists() {
-                    restrict_env_permissions(path)?;
-                }
+                let name = path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or(".env");
+                let ts = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .map(|d| d.as_nanos())
+                    .unwrap_or(0);
+                let tmp = path.with_file_name(format!(".{name}.tmp-{}-{ts}", std::process::id()));
                 let mut file = fs::OpenOptions::new()
-                    .create(true)
+                    .create_new(true)
                     .write(true)
-                    .truncate(true)
                     .mode(0o600)
-                    .open(path)
+                    .open(&tmp)
                     .map_err(|e| e.to_string())?;
-                file.write_all(content.as_bytes())
-                    .map_err(|e| e.to_string())?;
-                file.sync_all().map_err(|e| e.to_string())?;
-                // Garantir explicitamente permissões restritas antes de considerar o segredo persistido.
+                if let Err(e) = (|| -> Result<(), std::io::Error> {
+                    file.write_all(content.as_bytes())?;
+                    file.sync_all()?;
+                    fs::set_permissions(&tmp, fs::Permissions::from_mode(0o600))?;
+                    Ok(())
+                })() {
+                    let _ = fs::remove_file(&tmp);
+                    return Err(e.to_string());
+                }
+                if let Err(e) = fs::rename(&tmp, path) {
+                    let _ = fs::remove_file(&tmp);
+                    return Err(e.to_string());
+                }
+                // Garantir explicitamente permissões restritas no destino final.
                 restrict_env_permissions(path)
             }
 
             #[cfg(not(unix))]
             fn write_env_secure(path: &Path, content: &str) -> Result<(), String> {
+                use std::time::{SystemTime, UNIX_EPOCH};
                 if let Some(parent) = path.parent() {
                     fs::create_dir_all(parent).map_err(|e| e.to_string())?;
                 }
-                fs::write(path, content).map_err(|e| e.to_string())
+                let name = path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or(".env");
+                let ts = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .map(|d| d.as_nanos())
+                    .unwrap_or(0);
+                let tmp = path.with_file_name(format!(".{name}.tmp-{}-{ts}", std::process::id()));
+                fs::write(&tmp, content).map_err(|e| e.to_string())?;
+                fs::rename(&tmp, path).map_err(|e| {
+                    let _ = fs::remove_file(&tmp);
+                    e.to_string()
+                })
             }
 
-            let mut changed = false;
+            let mut pending_applied: Vec<String> = Vec::new();
             let mut created_env = false;
-            // 1) create env from example
+            let mut env_exists_now = env_exists;
+
+            // 1) create env from example (persistido imediatamente e de forma atômica)
             if !env_exists
                 && example_exists
                 && report
@@ -1192,8 +1222,8 @@ impl AppState {
                     .iter()
                     .any(|i| matches!(i.fix, Some(DoctorFixKind::CreateEnvFromExample)))
             {
-                if let Ok(content) = fs::read_to_string(example_path) {
-                    match write_env_secure(env_path, &content) {
+                match fs::read_to_string(example_path) {
+                    Ok(content) => match write_env_secure(env_path, &content) {
                         Ok(_) => {
                             report.applied.push(format!(
                                 "Criado products/{label}/.env a partir do .env.example"
@@ -1202,29 +1232,30 @@ impl AppState {
                             report
                                 .applied
                                 .push("Permissões do .env ajustadas para 600".into());
-                            changed = true;
                             created_env = true;
+                            env_exists_now = true;
+                            self.env_states.insert(product, load_env_state(product));
+                            working_vars = self
+                                .current_env()
+                                .map(|e| e.vars.clone())
+                                .unwrap_or_default();
                         }
                         Err(e) => {
-                            let _ = fs::remove_file(env_path);
                             report.failed.push(format!(
                                 "Falha ao criar .env com permissões seguras: {e}. Segredos não foram gravados."
                             ));
                         }
+                    },
+                    Err(e) => {
+                        report.failed.push(format!("Falha ao ler .env.example: {e}"));
                     }
                 }
             }
-            // reload state after possible creation
-            if changed {
-                self.env_states.insert(product, load_env_state(product));
-                working_vars = self
-                    .current_env()
-                    .map(|e| e.vars.clone())
-                    .unwrap_or_default();
-            }
 
-            // 2) add missing keys from example
+            // 2) add missing keys from example (em memória; só marcar aplicado após salvar)
+            let mut added = 0usize;
             if example_exists
+                && env_exists_now
                 && report
                     .issues
                     .iter()
@@ -1234,7 +1265,6 @@ impl AppState {
                     let ex_vars = parse_env_vars(&ex_c);
                     let mut cur_keys: std::collections::HashSet<String> =
                         working_vars.iter().map(|v| v.key.clone()).collect();
-                    let mut added = 0;
                     let mut new_vars = working_vars.clone();
                     for ev in ex_vars {
                         if !cur_keys.contains(&ev.key) {
@@ -1249,17 +1279,15 @@ impl AppState {
                             env.vars = working_vars.clone();
                             env.dirty = true;
                         }
-                        report
-                            .applied
+                        pending_applied
                             .push(format!("Adicionadas {added} chave(s) do .env.example"));
-                        changed = true;
                     }
                 }
             }
 
-            // 3) fill secret/required auto-generatable empties
+            // 3) fill secret/required auto-generatable empties (em memória; só marcar aplicado após salvar)
             let mut filled = 0usize;
-            {
+            if env_exists_now || !working_vars.is_empty() {
                 let mut vars = working_vars.clone();
                 for v in vars.iter_mut() {
                     if v.value.trim().is_empty() {
@@ -1286,10 +1314,9 @@ impl AppState {
                         env.vars = working_vars.clone();
                         env.dirty = true;
                     }
-                    report.applied.push(format!(
+                    pending_applied.push(format!(
                         "Preenchidos {filled} segredo(s)/campo(s) automaticamente"
                     ));
-                    changed = true;
                 }
             }
 
@@ -1298,12 +1325,14 @@ impl AppState {
                 .issues
                 .iter()
                 .any(|i| matches!(i.fix, Some(DoctorFixKind::SaveEnvNormalized)));
-            if changed || wants_save_normalized {
+            if !pending_applied.is_empty() || wants_save_normalized {
                 let target = Path::new(&env_path_s);
                 let existed_before = target.exists();
-                let previous = if existed_before {
+                // Se o arquivo já existia antes desta execução, só gravar se for legível
+                // (para não sobrescrever conteúdo desconhecido em caso de falha parcial).
+                let can_write = if existed_before && !created_env {
                     match fs::read_to_string(target) {
-                        Ok(content) => Some(content),
+                        Ok(_) => true,
                         Err(e) => {
                             report.failed.push(format!(
                                 "Falha ao ler .env existente: {e}. Arquivo preservado; nenhuma gravação foi realizada."
@@ -1313,18 +1342,27 @@ impl AppState {
                                 env.last_action =
                                     "Correção abortada: não foi possível ler o .env existente".into();
                             }
-                            None
+                            self.env_states.insert(product, load_env_state(product));
+                            false
                         }
                     }
+                } else if !existed_before && !created_env {
+                    // nada a normalizar se não há arquivo e não criamos agora
+                    pending_applied.clear();
+                    false
                 } else {
-                    None
+                    true
                 };
-                let can_write = !existed_before || previous.is_some();
+
                 if can_write {
                     let content = render_env_file(&working_vars);
                     match write_env_secure(target, &content) {
                         Ok(_) => {
+                            for msg in pending_applied.drain(..) {
+                                report.applied.push(msg);
+                            }
                             if let Some(env) = self.env_states.get_mut(&product) {
+                                env.vars = working_vars.clone();
                                 env.dirty = false;
                                 env.last_action = "Doctor aplicou correções e salvou o .env".into();
                             } else {
@@ -1337,34 +1375,21 @@ impl AppState {
                                 .push("Permissões do .env ajustadas para 600".into());
                         }
                         Err(e) => {
-                            // Requisito: não persistir valores secretos se não for possível garantir chmod 600.
-                            if filled > 0 {
-                                if let Some(prev) = previous.as_deref() {
-                                    let _ = fs::write(target, prev);
-                                    let _ = restrict_env_permissions(target);
-                                } else if created_env || !existed_before {
-                                    // Seguro remover apenas se o arquivo foi criado nesta execução
-                                    // ou não existia antes; nunca remover um .env preexistente.
-                                    let _ = fs::remove_file(target);
-                                }
-                                // Nunca remover um arquivo .env preexistente neste caminho.
-                                report.failed.push(format!(
-                                    "Falha ao garantir permissões seguras do .env: {e}. Segredos gerados não foram gravados."
-                                ));
-                                if let Some(env) = self.env_states.get_mut(&product) {
-                                    env.dirty = false;
-                                    env.last_action =
-                                        "Correção abortada: não foi possível proteger o .env".into();
-                                }
-                            } else {
-                                report.failed.push(format!(
-                                    "Falha ao salvar .env com permissões seguras: {e}"
-                                ));
+                            report.failed.push(format!(
+                                "Falha ao salvar .env com permissões seguras: {e}. Nenhuma alteração pendente foi aplicada."
+                            ));
+                            // Recarregar do disco para descartar mutações em memória não persistidas.
+                            self.env_states.insert(product, load_env_state(product));
+                            if let Some(env) = self.env_states.get_mut(&product) {
+                                env.dirty = false;
+                                env.last_action =
+                                    "Correção abortada: falha ao gravar o .env".into();
                             }
                         }
                     }
-                } else {
-                    // Arquivo preexistente ilegível: preservar e não tentar gravar/remover.
+                } else if !pending_applied.is_empty() {
+                    // Não foi possível gravar: não registrar correções pendentes como aplicadas.
+                    self.env_states.insert(product, load_env_state(product));
                 }
             } else if env_path.exists()
                 && report
@@ -2196,3 +2221,145 @@ fn apps_from_json_array(arr: &[serde_json::Value]) -> Vec<(String, String)> {
 }
 
 // (token editing is available through the .env lifecycle view)
+
+#[cfg(test)]
+mod doctor_tests {
+    use super::*;
+    use std::fs;
+    use std::path::PathBuf;
+    use std::sync::Mutex;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    static CWD_LOCK: Mutex<()> = Mutex::new(());
+
+    struct CwdGuard {
+        prev: PathBuf,
+        _lock: std::sync::MutexGuard<'static, ()>,
+    }
+    impl Drop for CwdGuard {
+        fn drop(&mut self) {
+            let _ = std::env::set_current_dir(&self.prev);
+        }
+    }
+
+    fn enter_temp_workspace(prefix: &str) -> (CwdGuard, PathBuf) {
+        let lock = CWD_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let prev = std::env::current_dir().expect("cwd");
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let dir = std::env::temp_dir().join(format!("musical-lamp-{prefix}-{}-{nanos}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("products/accounting")).unwrap();
+        fs::create_dir_all(dir.join("products/trivia")).unwrap();
+        fs::create_dir_all(dir.join("common")).unwrap();
+        // minimal files so AppState preflight/onboarding don't panic
+        fs::write(dir.join("common/compose.base.yaml"), "services: {}\n").unwrap();
+        fs::write(dir.join("common/dc.sh"), "#!/bin/sh\nexit 0\n").unwrap();
+        std::env::set_current_dir(&dir).unwrap();
+        (CwdGuard { prev, _lock: lock }, dir)
+    }
+
+    #[test]
+    fn failed_write_preserves_existing_env_and_does_not_mark_applied() {
+        let (_guard, dir) = enter_temp_workspace("doctor-fail");
+        let env_path = dir.join("products/accounting/.env");
+        let example_path = dir.join("products/accounting/.env.example");
+        // existing env missing DB_PASSWORD (auto-fixable) so doctor will try to fill and save
+        let original = "IMAGE_REF=ghcr.io/example/app:1.0.0\nDB_PASSWORD=\nTUNNEL_TOKEN=tok12345678901234567890\nEDGE_SUBNET=172.30.0.0/24\nEDGE_IP_RANGE=172.30.0.0/24\nCLOUDFLARED_IP=172.30.0.2\n";
+        fs::write(&env_path, original).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&env_path, fs::Permissions::from_mode(0o600)).unwrap();
+        }
+        fs::write(&example_path, original).unwrap();
+
+        let telemetry: Box<dyn crate::telemetry::TelemetryProvider + Send> =
+            Box::new(crate::telemetry::MockTelemetryProvider::new());
+        let mut state = AppState::new(telemetry);
+        state.featured_product = Product::Accounting;
+        state.env_states.insert(Product::Accounting, load_env_state(Product::Accounting));
+        state.run_doctor_scan(false);
+
+        // force write failure by making the product directory read-only (cannot create temp file)
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(dir.join("products/accounting"), fs::Permissions::from_mode(0o500)).unwrap();
+        }
+
+        state.run_doctor_scan(true);
+
+        // restore permissions to inspect
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(dir.join("products/accounting"), fs::Permissions::from_mode(0o700));
+        }
+
+        let after = fs::read_to_string(&env_path).unwrap();
+        assert_eq!(after, original, "falha de gravação não deve corromper ou alterar o .env original");
+
+        let has_fill_applied = state
+            .doctor
+            .applied
+            .iter()
+            .any(|m| m.contains("Preenchidos") || m.contains("Adicionadas") || m.contains("Salvo products/accounting/.env"));
+        assert!(
+            !has_fill_applied,
+            "correções não persistidas não devem constar como aplicadas: {:?} (falhas: {:?})",
+            state.doctor.applied,
+            state.doctor.failed
+        );
+        assert!(
+            !state.doctor.failed.is_empty(),
+            "falha de gravação deve ser reportada"
+        );
+    }
+
+    #[test]
+    fn unreadable_existing_env_is_preserved_and_not_marked_applied() {
+        // Se o .env existente não pode ser lido, o Doctor não deve gravar por cima nem marcar correções como aplicadas.
+        #[cfg(unix)]
+        {
+            let (_guard, dir) = enter_temp_workspace("doctor-unreadable");
+            let env_path = dir.join("products/accounting/.env");
+            let example_path = dir.join("products/accounting/.env.example");
+            let original = "IMAGE_REF=\nDB_PASSWORD=\nTUNNEL_TOKEN=tok12345678901234567890\nEDGE_SUBNET=172.30.0.0/24\nEDGE_IP_RANGE=172.30.0.0/24\nCLOUDFLARED_IP=172.30.0.2\n";
+            fs::write(&env_path, original).unwrap();
+            fs::write(&example_path, original).unwrap();
+            use std::os::unix::fs::PermissionsExt;
+            // tornar ilegível
+            fs::set_permissions(&env_path, fs::Permissions::from_mode(0o000)).unwrap();
+
+            let telemetry: Box<dyn crate::telemetry::TelemetryProvider + Send> =
+                Box::new(crate::telemetry::MockTelemetryProvider::new());
+            let mut state = AppState::new(telemetry);
+            state.featured_product = Product::Accounting;
+            state.env_states.insert(Product::Accounting, load_env_state(Product::Accounting));
+            state.run_doctor_scan(true);
+
+            // restaurar para leitura/verificação
+            let _ = fs::set_permissions(&env_path, fs::Permissions::from_mode(0o600));
+            let after = fs::read_to_string(&env_path).unwrap();
+            assert_eq!(after, original, ".env existente ilegível deve ser preservado sem gravação");
+            let has_saved = state
+                .doctor
+                .applied
+                .iter()
+                .any(|m| m.contains("Salvo products/accounting/.env") || m.contains("Preenchidos"));
+            assert!(
+                !has_saved,
+                "não deve marcar como aplicado quando não foi possível ler/gravar: {:?}",
+                state.doctor.applied
+            );
+            assert!(
+                state.doctor.failed.iter().any(|m| m.contains("ler .env existente") || m.contains("Falha")),
+                "deve reportar falha ao ler .env existente: {:?}",
+                state.doctor.failed
+            );
+        }
+    }
+}
