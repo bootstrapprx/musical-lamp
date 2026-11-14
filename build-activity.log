@@ -1517,3 +1517,47 @@
 18:21:20 done  Check own-tests: `cargo test --quiet` passed.
 18:21:20 stage Ready: all 2 checks pass.
 18:21:20 stage Ready: all 2 checks pass.
+--- Craft Anything 0.6.1: a run started 2026-11-14 18:23:39 UTC ---
+18:23:39 stage Getting the builder ready…
+18:23:39 stage Improving the build…
+18:23:39 note  Asking OpenCode…
+18:23:45 start read: README.md
+18:23:45 done  read: README.md: Read file /home/otto/Apps/musical-lamp/README.md, 0 lines
+18:23:45 start read: Cargo.toml
+18:23:45 done  read: Cargo.toml: Read file /home/otto/Apps/musical-lamp/Cargo.toml, lines 1-17 1: [package] 2: name = "musical-lamp-tui" 3: version = "0.1.0" 4: edition = "2021" 5: description = "Multi-host Docker Compose + FinOps TU
+18:23:45 start shell
+18:23:45 done  shell: total 284 drwxr-xr-x. 1 otto otto 432 Nov 14 14:23 . drwxr-xr-x. 1 otto otto 74 Nov 13 16:08 .. drwxr-xr-x. 1 otto otto 0 Nov 13 18:30 app drwxr-xr-x. 1 otto otto 78 Nov 14 14:08 attac
+18:23:45 start shell
+18:23:45 done  shell: 400 }; 401 } 402 "migrate" if !success => { 403 ops.state = StackState::Degraded; 404 } 405
+18:23:49 start shell
+18:23:49 done  shell: ./.cache/gnome-software/icons/9e7d93dd98b4a9afb4abca80e7601d21a18b1ffc-io.itch.doctorm64.skippybot.png ./Downloads/files/kodoo-suite/kodoo-ops/src/app.rs ./Downloads/kodoo-ops/src/app.rs find: ‘./.loc
+18:23:54 start shell
+18:23:54 done  shell: src/ui/widgets/ops.rs:77: "[k] Doctor", src/ui/widgets/ops.rs:163: "Doctor — diagnóstico e correções", src/ui/widgets/ops.rs:169: state.doctor.summary.clone(), src/ui/
+18:23:54 start shell
+18:23:54 done  shell: src/: action.rs app.rs domain event.rs main.rs ops_core orchestration.rs telemetry ui src/ui/: layout.rs mod.rs theme.rs widgets src/ui/widgets/: containers.rs env.rs finops.rs modals.rs mod.rs node
+18:23:54 start shell
+18:23:54 done  shell: src/ui/widgets/ops.rs:226: if state.preflight_ran { src/ui/widgets/ops.rs:231: for c in state.preflight.iter().take(4) { src/app.rs:136: pub preflight: Vec<PreflightCheck>, src/ap
+18:23:58 start shell
+18:23:58 done  shell: return; }; let Some(var_key) = env.vars.get(idx).map(|v| v.key.clone()) else { return; }; let kind = secrets::default_kind_for(&var_key).unwrap_
+18:23:58 start shell
+18:23:58 done  shell: 129: pub featured_product: Product, 288: featured_product: Product::Accounting, 304: s.run_doctor_scan(false); 334: self.env_states.get(&self.featured_product) 337:
+18:23:58 start shell
+18:23:58 done  shell: pub bridge_panel: BridgePanel, pub modal: Modal, pub nodes: Vec<Node>, pub containers: Vec<Container>, pub selected_node: usize, pub selected_container: usize, pub budget:
+18:23:58 start shell
+18:23:58 done  shell: src/domain/mod.rs:131:pub struct DoctorIssue { src/domain/mod.rs:140:pub struct DoctorReport { src/domain/mod.rs:141: pub issues: Vec<DoctorIssue>,
+18:24:07 start edit: src/app.rs
+18:24:07 done  edit: src/app.rs: Edited Apps/musical-lamp/src/app.rs (1 replacement)
+18:24:11 start shell
+18:24:11 done  shell: Checking musical-lamp-tui v0.1.0 (/home/otto/Apps/musical-lamp) Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.22s
+18:24:11 start shell
+18:24:11 done  shell: Blocking waiting for file lock on build directory Checking musical-lamp-tui v0.1.0 (/home/otto/Apps/musical-lamp) Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.46s
+18:24:19 said  Corrigi o problema do diagnóstico ao alternar de produto: agora, sempre que você troca de produto na tela, a verificação do Doctor é refeita na hora para o produto que ficou selecionado. Assim o relatório, os problemas e as correções sugeridas passam a corresponder à configuração que está sendo exibida, em vez de manter o resultado do produto anterior.
+18:24:19 said  Também verifiquei que o projeto continua compilando sem erros ou avisos após a mudança. O restante da evolução maior descrita na missão (nova arquitetura e layout completo da interface) não foi implementado nesta etapa, já que o pedido foi priorizar essa correção do Doctor. Se quiser, no próximo passo posso avançar na refatoração completa da interface conforme a especificação.
+18:24:19 note  The builder's turn ended (81422 tokens in, 1566 out)
+18:24:19 stage Checking the build…
+18:24:19 stage Checking the build (1 of 2): build…
+18:24:20 stage Checking the build (2 of 2): own-tests…
+18:24:20 done  Check build: `cargo build --quiet` passed.
+18:24:20 done  Check own-tests: `cargo test --quiet` passed.
+18:24:20 stage Ready: all 2 checks pass.
+18:24:20 stage Ready: all 2 checks pass.

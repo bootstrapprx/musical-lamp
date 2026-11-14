@@ -485,6 +485,7 @@ impl AppState {
                 self.preflight.clear();
                 self.preflight_ran = false;
                 self.refresh_onboarding();
+                self.run_doctor_scan(false);
                 self.apps_selected = 0;
                 None
             }
