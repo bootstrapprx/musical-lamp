@@ -9,7 +9,7 @@ use crate::event::{Action, Event};
 
 /// Build a real docker-compose orchestration action for the selected product.
 /// Uses common/dc.sh <product> ... which wraps `docker compose` with the right env/base files.
-pub fn build_ops_action(product: Product, action: &str) -> Option<Action> {
+pub fn build_ops_action(product: &Product, action: &str) -> Option<Action> {
     let p = product.label().to_string();
     let (cmd, args): (String, Vec<String>) = match action {
         "up" => (
@@ -47,7 +47,7 @@ pub fn build_ops_action(product: Product, action: &str) -> Option<Action> {
         _ => return None,
     };
     Some(Action::RunOps {
-        product,
+        product: product.clone(),
         action: action.to_string(),
         cmd,
         args,
@@ -68,7 +68,7 @@ pub fn spawn_ops_command(tx: mpsc::UnboundedSender<Event>, req: Action) {
     tokio::spawn(async move {
         let pretty = format!("{} {}", cmd, args.join(" "));
         let _ = tx.send(Event::OpsLine {
-            product,
+            product: product.clone(),
             line: format!("[exec] {pretty}"),
         });
 
@@ -83,7 +83,7 @@ pub fn spawn_ops_command(tx: mpsc::UnboundedSender<Event>, req: Action) {
             Ok(c) => c,
             Err(e) => {
                 let _ = tx.send(Event::OpsFinished {
-                    product,
+                    product: product.clone(),
                     action,
                     success: false,
                     summary: format!("não foi possível executar: {e}"),
@@ -94,20 +94,25 @@ pub fn spawn_ops_command(tx: mpsc::UnboundedSender<Event>, req: Action) {
 
         if let Some(stdout) = child.stdout.take() {
             let tx2 = tx.clone();
+            let product = product.clone();
             tokio::spawn(async move {
                 let mut lines = BufReader::new(stdout).lines();
                 while let Ok(Some(line)) = lines.next_line().await {
-                    let _ = tx2.send(Event::OpsLine { product, line });
+                    let _ = tx2.send(Event::OpsLine {
+                        product: product.clone(),
+                        line,
+                    });
                 }
             });
         }
         if let Some(stderr) = child.stderr.take() {
             let tx2 = tx.clone();
+            let product = product.clone();
             tokio::spawn(async move {
                 let mut lines = BufReader::new(stderr).lines();
                 while let Ok(Some(line)) = lines.next_line().await {
                     let _ = tx2.send(Event::OpsLine {
-                        product,
+                        product: product.clone(),
                         line: format!("[err] {line}"),
                     });
                 }
@@ -124,7 +129,7 @@ pub fn spawn_ops_command(tx: mpsc::UnboundedSender<Event>, req: Action) {
                     format!("falhou (código {:?})", code)
                 };
                 let _ = tx.send(Event::OpsFinished {
-                    product,
+                    product: product.clone(),
                     action,
                     success: ok,
                     summary,
@@ -132,7 +137,7 @@ pub fn spawn_ops_command(tx: mpsc::UnboundedSender<Event>, req: Action) {
             }
             Err(e) => {
                 let _ = tx.send(Event::OpsFinished {
-                    product,
+                    product: product.clone(),
                     action,
                     success: false,
                     summary: format!("erro ao aguardar processo: {e}"),

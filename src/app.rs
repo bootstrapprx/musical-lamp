@@ -5,8 +5,9 @@ use std::path::Path;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::domain::{
-    allocate_costs, Container, DoctorFixKind, DoctorIssue, DoctorReport, EnvVar, Node,
-    OnboardingStep, OpsStatus, PreflightCheck, PreflightStatus, Product, ProductEnv, StackState,
+    allocate_costs, discover_products, other_product, Container, DoctorFixKind, DoctorIssue,
+    DoctorReport, EnvVar, Node, OnboardingStep, OpsStatus, PreflightCheck, PreflightStatus,
+    Product, ProductEnv, StackState,
 };
 use crate::event::{Action, Event};
 use crate::ops_core::{envfile, secrets, validate};
@@ -121,7 +122,7 @@ pub struct AddAppForm {
 
 impl AddAppForm {
     pub fn new(product: Product) -> Self {
-        let ref_options = AppState::ref_options_for_product(product);
+        let ref_options = AppState::ref_options_for_product(&product);
         let ref_selected = 0;
         let ref_value = ref_options
             .first()
@@ -148,7 +149,7 @@ impl AddAppForm {
 
 impl Default for AddAppForm {
     fn default() -> Self {
-        Self::new(Product::Accounting)
+        Self::new(Product::new("accounting"))
     }
 }
 
@@ -168,6 +169,7 @@ pub struct AppState {
     pub telemetry: Box<dyn TelemetryProvider + Send>,
     pub log_scroll: u16,
     pub featured_product: Product,
+    pub products: Vec<Product>,
     pub env_states: HashMap<Product, ProductEnv>,
     pub env_selected: usize,
     pub env_editing: bool,
@@ -185,19 +187,27 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(telemetry: Box<dyn TelemetryProvider + Send>) -> Self {
+        let products = discover_products();
+        let products = if products.is_empty() {
+            vec![Product::new("default")]
+        } else {
+            products
+        };
+        let featured_product = products[0].clone();
         // Não inventar hosts/containers: o provider popula os dados a partir do
         // Docker no primeiro tick. Antes da coleta a tela fica explicitamente vazia.
         let nodes = Vec::new();
         let containers = Vec::new();
         let mut env_states = HashMap::new();
-        env_states.insert(Product::Accounting, load_env_state(Product::Accounting));
-        env_states.insert(Product::Trivia, load_env_state(Product::Trivia));
+        for product in &products {
+            env_states.insert(product.clone(), load_env_state(&product));
+        }
         let mut ops_states = HashMap::new();
-        for p in [Product::Accounting, Product::Trivia] {
+        for p in &products {
             ops_states.insert(
-                p,
+                p.clone(),
                 OpsStatus {
-                    product: p,
+                    product: p.clone(),
                     state: StackState::Stopped,
                     last_action: "estado inicial: use Consultar para verificar a stack real".into(),
                     log_lines: vec![format!(
@@ -224,7 +234,8 @@ impl AppState {
             budget: 100.0,
             telemetry,
             log_scroll: 0,
-            featured_product: Product::Accounting,
+            featured_product,
+            products,
             env_states,
             env_selected: 0,
             env_editing: false,
@@ -419,7 +430,14 @@ impl AppState {
                 None
             }
             KeyCode::Char('p') => {
-                self.featured_product = self.featured_product.toggle();
+                if let Some(index) = self
+                    .products
+                    .iter()
+                    .position(|product| product == &self.featured_product)
+                {
+                    let next = (index + 1) % self.products.len();
+                    self.featured_product = self.products[next].clone();
+                }
                 self.clamp_env_selection();
                 self.preflight.clear();
                 self.preflight_ran = false;
@@ -427,7 +445,7 @@ impl AppState {
                 self.run_doctor_scan(false);
                 self.apps_selected = 0;
                 if let Modal::AddApp(ref mut form) = self.modal {
-                    form.ref_options = Self::ref_options_for_product(self.featured_product);
+                    form.ref_options = Self::ref_options_for_product(&self.featured_product);
                     form.ref_selected = 0;
                     form.ref_dropdown_open = false;
                     if form.ref_mode == RefMode::Dropdown {
@@ -716,9 +734,9 @@ impl AppState {
     }
 
     fn generate_env_from_example(&mut self) {
-        let product = self.featured_product;
-        let example = product_env_example_path(product);
-        let target = product_env_path(product);
+        let product = self.featured_product.clone();
+        let example = product_env_example_path(&product);
+        let target = product_env_path(&product);
         match fs::read_to_string(&example) {
             Ok(content) => {
                 let vars = parse_env_vars(&content);
@@ -774,16 +792,17 @@ impl AppState {
     }
 
     fn reload_env(&mut self) {
-        let product = self.featured_product;
-        self.env_states.insert(product, load_env_state(product));
+        let product = self.featured_product.clone();
+        self.env_states
+            .insert(product.clone(), load_env_state(&product));
         self.clamp_env_selection();
         self.refresh_onboarding();
         self.run_doctor_scan(false);
     }
 
     fn save_env(&mut self) {
-        let product = self.featured_product;
-        let path = product_env_path(product);
+        let product = self.featured_product.clone();
+        let path = product_env_path(&product);
         let content = if let Some(env) = self.current_env() {
             render_env_file(&env.vars)
         } else {
@@ -806,7 +825,7 @@ impl AppState {
     }
 
     fn run_ops_action(&mut self, action: &str) -> Option<Action> {
-        let product = self.featured_product;
+        let product = self.featured_product.clone();
         match action {
             "preflight" => {
                 self.run_preflight();
@@ -836,7 +855,7 @@ impl AppState {
             _ => {}
         }
 
-        if let Some(cmd_action) = orchestration::build_ops_action(product, action) {
+        if let Some(cmd_action) = orchestration::build_ops_action(&product, action) {
             if let Some(ops) = self.ops_states.get_mut(&product) {
                 match action {
                     "up" => {
@@ -880,10 +899,10 @@ impl AppState {
     }
 
     pub fn run_doctor_scan(&mut self, apply_fixes: bool) {
-        let product = self.featured_product;
+        let product = self.featured_product.clone();
         let label = product.label();
-        let env_path_s = product_env_path(product);
-        let example_path_s = product_env_example_path(product);
+        let env_path_s = product_env_path(&product);
+        let example_path_s = product_env_example_path(&product);
         let env_path = Path::new(&env_path_s);
         let example_path = Path::new(&example_path_s);
         let prod_dir = Path::new("products").join(label);
@@ -1021,8 +1040,9 @@ impl AppState {
         if env_exists || !working_vars.is_empty() {
             let content = render_env_file(&working_vars);
             let ef = envfile::EnvFile::parse(&content);
-            let other = fs::read_to_string(product_env_path(product.toggle()))
-                .ok()
+            let other = other_product(&product)
+                .map(|other| product_env_path(&other))
+                .and_then(|path| fs::read_to_string(path).ok())
                 .map(|c| envfile::EnvFile::parse(&c));
             let findings = validate::validate_env(&ef, env_path, other.as_ref());
             for fnd in findings {
@@ -1247,7 +1267,8 @@ impl AppState {
                                 .push("Permissões do .env ajustadas para 600".into());
                             created_env = true;
                             env_exists_now = true;
-                            self.env_states.insert(product, load_env_state(product));
+                            self.env_states
+                                .insert(product.clone(), load_env_state(&product));
                             working_vars = self
                                 .current_env()
                                 .map(|e| e.vars.clone())
@@ -1358,7 +1379,8 @@ impl AppState {
                                     "Correção abortada: não foi possível ler o .env existente"
                                         .into();
                             }
-                            self.env_states.insert(product, load_env_state(product));
+                            self.env_states
+                                .insert(product.clone(), load_env_state(&product));
                             false
                         }
                     }
@@ -1382,7 +1404,8 @@ impl AppState {
                                 env.dirty = false;
                                 env.last_action = "Doctor aplicou correções e salvou o .env".into();
                             } else {
-                                self.env_states.insert(product, load_env_state(product));
+                                self.env_states
+                                    .insert(product.clone(), load_env_state(&product));
                             }
                             report.applied.push(format!("Salvo products/{label}/.env"));
                             #[cfg(unix)]
@@ -1395,7 +1418,8 @@ impl AppState {
                                 "Falha ao salvar .env com permissões seguras: {e}. Nenhuma alteração pendente foi aplicada."
                             ));
                             // Recarregar do disco para descartar mutações em memória não persistidas.
-                            self.env_states.insert(product, load_env_state(product));
+                            self.env_states
+                                .insert(product.clone(), load_env_state(&product));
                             if let Some(env) = self.env_states.get_mut(&product) {
                                 env.dirty = false;
                                 env.last_action =
@@ -1405,7 +1429,8 @@ impl AppState {
                     }
                 } else if !pending_applied.is_empty() {
                     // Não foi possível gravar: não registrar correções pendentes como aplicadas.
-                    self.env_states.insert(product, load_env_state(product));
+                    self.env_states
+                        .insert(product.clone(), load_env_state(&product));
                 }
             } else if env_path.exists()
                 && report
@@ -1425,7 +1450,8 @@ impl AppState {
             }
 
             // reload env state/findings after fixes and rescan for up-to-date report
-            self.env_states.insert(product, load_env_state(product));
+            self.env_states
+                .insert(product.clone(), load_env_state(&product));
             self.refresh_onboarding();
 
             let applied = report.applied.clone();
@@ -1533,7 +1559,7 @@ impl AppState {
     }
 
     pub fn run_preflight(&mut self) {
-        let product = self.featured_product;
+        let product = self.featured_product.clone();
         let label = product.label();
         let mut checks = Vec::new();
         let env_path = Path::new("products").join(label).join(".env");
@@ -1596,8 +1622,9 @@ impl AppState {
 
         if let Ok(content) = fs::read_to_string(&env_path) {
             let ef = envfile::EnvFile::parse(&content);
-            let other = fs::read_to_string(product_env_path(product.toggle()))
-                .ok()
+            let other = other_product(&product)
+                .map(|other| product_env_path(&other))
+                .and_then(|path| fs::read_to_string(path).ok())
                 .map(|c| envfile::EnvFile::parse(&c));
             let findings = validate::validate_env(&ef, &env_path, other.as_ref());
             let errors = findings
@@ -1677,14 +1704,14 @@ impl AppState {
     }
 
     pub fn refresh_onboarding(&mut self) {
-        let product = self.featured_product;
+        let product = self.featured_product.clone();
         let label = product.label();
         let env_path = Path::new("products").join(label).join(".env");
         let example_path = Path::new("products").join(label).join(".env.example");
         let env = self.env_states.get(&product);
         let has_env = env_path.exists();
         let has_example = example_path.exists();
-        let tunnel_ok = env_has_tunnel_token(product);
+        let tunnel_ok = env_has_tunnel_token(&product);
         let critical_missing = env
             .map(|e| {
                 e.vars.iter().any(|v| {
@@ -1932,7 +1959,7 @@ impl AppState {
                     && matches!(self.modal, Modal::AddApp(ref f) if f.field == AppField::Ref) =>
             {
                 if let Modal::AddApp(ref mut form) = self.modal {
-                    form.ref_options = AppState::ref_options_for_product(self.featured_product);
+                    form.ref_options = AppState::ref_options_for_product(&self.featured_product);
                     form.ref_mode = if form.ref_options.is_empty() {
                         RefMode::CustomInput
                     } else {
@@ -2071,7 +2098,7 @@ impl AppState {
             || v.contains("PLACEHOLDER")
     }
 
-    pub fn ref_options_for_product(product: Product) -> Vec<RefOption> {
+    pub fn ref_options_for_product(product: &Product) -> Vec<RefOption> {
         let mut options: Vec<RefOption> = Vec::new();
         let mut seen = std::collections::HashSet::new();
 
@@ -2318,10 +2345,10 @@ impl AppState {
     }
 }
 
-pub fn product_env_path(product: Product) -> String {
+pub fn product_env_path(product: &Product) -> String {
     format!("products/{}/.env", product.label())
 }
-pub fn product_env_example_path(product: Product) -> String {
+pub fn product_env_example_path(product: &Product) -> String {
     format!("products/{}/.env.example", product.label())
 }
 
@@ -2368,9 +2395,9 @@ pub fn render_env_file(vars: &[EnvVar]) -> String {
     out
 }
 
-pub fn load_env_state(product: Product) -> ProductEnv {
-    let env_path = product_env_path(product);
-    let example_path = product_env_example_path(product);
+pub fn load_env_state(product: &Product) -> ProductEnv {
+    let env_path = product_env_path(&product);
+    let example_path = product_env_example_path(&product);
     let (path_hint, content, last_action, loaded_from_env) = if Path::new(&env_path).exists() {
         match fs::read_to_string(&env_path) {
             Ok(c) => (
@@ -2417,8 +2444,9 @@ pub fn load_env_state(product: Product) -> ProductEnv {
     let mut findings = Vec::new();
     if !content.is_empty() {
         let ef = envfile::EnvFile::parse(&content);
-        let other_env = fs::read_to_string(product_env_path(product.toggle()))
-            .ok()
+        let other_env = other_product(&product)
+            .map(|other| product_env_path(&other))
+            .and_then(|path| fs::read_to_string(path).ok())
             .map(|c| envfile::EnvFile::parse(&c));
         let env_for_validation = if loaded_from_env || Path::new(&env_path).exists() {
             fs::read_to_string(&env_path)
@@ -2458,7 +2486,7 @@ pub fn load_env_state(product: Product) -> ProductEnv {
         }
     }
     ProductEnv {
-        product,
+        product: product.clone(),
         path_hint,
         vars,
         dirty: false,
@@ -2468,8 +2496,8 @@ pub fn load_env_state(product: Product) -> ProductEnv {
     }
 }
 
-pub fn env_has_tunnel_token(product: Product) -> bool {
-    let env = load_env_state(product);
+pub fn env_has_tunnel_token(product: &Product) -> bool {
+    let env = load_env_state(&product);
     env.vars
         .iter()
         .find(|v| v.key == "TUNNEL_TOKEN")
@@ -2556,10 +2584,11 @@ mod doctor_tests {
         let telemetry: Box<dyn crate::telemetry::TelemetryProvider + Send> =
             Box::new(crate::telemetry::MockTelemetryProvider::new());
         let mut state = AppState::new(telemetry);
-        state.featured_product = Product::Accounting;
-        state
-            .env_states
-            .insert(Product::Accounting, load_env_state(Product::Accounting));
+        state.featured_product = Product::new("accounting");
+        state.env_states.insert(
+            Product::new("accounting"),
+            load_env_state(&Product::new("accounting")),
+        );
         state.run_doctor_scan(false);
 
         // force write failure without relying on permissions root may bypass:
@@ -2632,10 +2661,11 @@ mod doctor_tests {
         let telemetry: Box<dyn crate::telemetry::TelemetryProvider + Send> =
             Box::new(crate::telemetry::MockTelemetryProvider::new());
         let mut state = AppState::new(telemetry);
-        state.featured_product = Product::Accounting;
-        state
-            .env_states
-            .insert(Product::Accounting, load_env_state(Product::Accounting));
+        state.featured_product = Product::new("accounting");
+        state.env_states.insert(
+            Product::new("accounting"),
+            load_env_state(&Product::new("accounting")),
+        );
         state.run_doctor_scan(true);
 
         let env_meta = fs::symlink_metadata(&env_path).unwrap();
@@ -2682,10 +2712,11 @@ mod doctor_tests {
         let telemetry: Box<dyn crate::telemetry::TelemetryProvider + Send> =
             Box::new(crate::telemetry::MockTelemetryProvider::new());
         let mut state = AppState::new(telemetry);
-        state.featured_product = Product::Accounting;
-        state
-            .env_states
-            .insert(Product::Accounting, load_env_state(Product::Accounting));
+        state.featured_product = Product::new("accounting");
+        state.env_states.insert(
+            Product::new("accounting"),
+            load_env_state(&Product::new("accounting")),
+        );
         state.run_doctor_scan(true);
 
         assert!(

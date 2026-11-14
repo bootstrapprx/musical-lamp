@@ -1,4 +1,6 @@
 use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::Path;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Node {
@@ -34,26 +36,46 @@ impl Node {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum Product {
-    Accounting,
-    Trivia,
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Product {
+    id: String,
 }
 
 impl Product {
-    pub fn label(self) -> &'static str {
-        match self {
-            Product::Accounting => "accounting",
-            Product::Trivia => "trivia",
-        }
+    pub fn new(id: impl Into<String>) -> Self {
+        Self { id: id.into() }
     }
 
-    pub fn toggle(self) -> Self {
-        match self {
-            Product::Accounting => Product::Trivia,
-            Product::Trivia => Product::Accounting,
-        }
+    pub fn label(&self) -> &str {
+        &self.id
     }
+}
+
+pub fn discover_products() -> Vec<Product> {
+    let root = Path::new("products");
+    let mut products: Vec<Product> = fs::read_dir(root)
+        .ok()
+        .into_iter()
+        .flat_map(|entries| entries.filter_map(Result::ok))
+        .filter_map(|entry| {
+            let path = entry.path();
+            if !path.is_dir() {
+                return None;
+            }
+            let valid = ["apps.json", "build.env", ".env.example"]
+                .iter()
+                .any(|name| path.join(name).is_file());
+            valid.then(|| Product::new(entry.file_name().to_string_lossy()))
+        })
+        .collect();
+    products.sort_by(|a, b| a.label().cmp(b.label()));
+    products
+}
+
+pub fn other_product(product: &Product) -> Option<Product> {
+    discover_products()
+        .into_iter()
+        .find(|candidate| candidate != product)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

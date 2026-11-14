@@ -10,9 +10,16 @@ ENVF="$ROOT/products/$P/.env"
   echo "falta $ENVF (copie de .env.example)" >&2
   exit 1
 }
+PROFILE_ARGS=()
+if [ "${1:-}" = "--observability" ]; then
+  PROFILE_ARGS+=(--profile observability)
+  shift
+fi
 exec docker compose \
   -p "kodoo-$P" \
   --project-directory "$ROOT/products/$P" \
   --env-file "$ENVF" \
   -f "$ROOT/common/compose.base.yaml" \
+  "${PROFILE_ARGS[@]}" \
+  -f "$ROOT/common/observability.compose.yaml" \
   "$@"

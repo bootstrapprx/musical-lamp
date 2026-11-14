@@ -1,108 +1,62 @@
-//! Telemetria local do Docker.
-//!
-//! A TUI consulta o daemon por meio do CLI oficial em vez de assumir a presença
-//! de uma API/socket específico. Isso mantém a primeira integração compatível
-//! com Docker Desktop, Linux e contextos Docker remotos configurados no CLI.
+//! Telemetria local do Docker sem bloquear o loop visual da TUI.
 
 use std::collections::HashMap;
 use std::process::Command;
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::Duration;
 
 use serde::Deserialize;
 
-use crate::domain::{Container, Node};
+use crate::domain::{Container, Node, Product};
 
 pub trait TelemetryProvider {
     fn tick(&mut self, nodes: &mut Vec<Node>, containers: &mut Vec<Container>);
 }
 
+#[derive(Clone)]
+struct Snapshot {
+    nodes: Vec<Node>,
+    containers: Vec<Container>,
+}
+
 pub struct DockerTelemetryProvider {
-    products: Vec<&'static str>,
+    cache: Arc<Mutex<Option<Snapshot>>>,
 }
 
 impl DockerTelemetryProvider {
-    pub fn new() -> Self {
-        Self {
-            products: vec!["accounting", "trivia"],
-        }
-    }
-
-    fn collect(&self) -> Option<(Vec<Node>, Vec<Container>)> {
-        if !docker_available() {
-            return None;
-        }
-
-        let mut nodes = Vec::new();
-        let mut containers = Vec::new();
-        for product in &self.products {
-            let project = format!("kodoo-{product}");
-            let discovered = list_project_containers(&project)?;
-            let ids: Vec<&str> = discovered.iter().map(|c| c.id.as_str()).collect();
-            let stats = read_stats(&ids);
-            let node_id = format!("docker-{product}");
-
-            let mut node_cpu = 0.0;
-            let mut node_ram = 0.0;
-            for item in discovered {
-                let stat = stats.get(&item.id);
-                let cpu = stat.map(|s| s.cpu_pct).unwrap_or(0.0);
-                let ram = stat.map(|s| s.mem_pct).unwrap_or(0.0);
-                node_cpu += cpu;
-                node_ram += ram;
-                containers.push(Container {
-                    id: item.id,
-                    name: item.name,
-                    node_id: node_id.clone(),
-                    stack: (*product).to_string(),
-                    cpu_share_pct: cpu,
-                    ram_share_pct: ram,
-                    status: item.status,
-                    logs: Vec::new(),
-                });
-            }
-
-            nodes.push(Node {
-                id: node_id,
-                name: format!("docker-{product}"),
-                region: "local".into(),
-                host: "local Docker context".into(),
-                ssh_user: "local".into(),
-                provider: "Docker Engine".into(),
-                monthly_cost: 0.0,
-                online: true,
-                cpu_pct: node_cpu.clamp(0.0, 100.0),
-                ram_pct: node_ram.clamp(0.0, 100.0),
-                cpu_history: vec![node_cpu.round().clamp(0.0, 100.0) as u64],
-                ram_history: vec![node_ram.round().clamp(0.0, 100.0) as u64],
-            });
-        }
-        Some((nodes, containers))
+    pub fn new(products: Vec<Product>) -> Self {
+        let cache = Arc::new(Mutex::new(None));
+        let worker_cache = Arc::clone(&cache);
+        thread::Builder::new()
+            .name("docker-telemetry".into())
+            .spawn(move || loop {
+                if let Some(snapshot) = collect(&products) {
+                    if let Ok(mut cached) = worker_cache.lock() {
+                        *cached = Some(snapshot);
+                    }
+                }
+                thread::sleep(Duration::from_secs(5));
+            })
+            .expect("não foi possível iniciar a coleta de telemetria Docker");
+        Self { cache }
     }
 }
 
 impl Default for DockerTelemetryProvider {
     fn default() -> Self {
-        Self::new()
+        Self::new(crate::domain::discover_products())
     }
 }
 
 impl TelemetryProvider for DockerTelemetryProvider {
     fn tick(&mut self, nodes: &mut Vec<Node>, containers: &mut Vec<Container>) {
-        let Some((fresh_nodes, fresh_containers)) = self.collect() else {
-            for node in nodes.iter_mut() {
-                node.online = false;
-                node.cpu_pct = 0.0;
-                node.ram_pct = 0.0;
-            }
-            for container in containers.iter_mut() {
-                container.status = "docker indisponível".into();
-                container.cpu_share_pct = 0.0;
-                container.ram_share_pct = 0.0;
-            }
-            return;
-        };
-
-        *nodes = fresh_nodes;
-        *containers = fresh_containers;
+        // O tick só lê o último snapshot; nenhum processo Docker é iniciado no thread da TUI.
+        let snapshot = self.cache.lock().ok().and_then(|cached| cached.clone());
+        if let Some(snapshot) = snapshot {
+            *nodes = snapshot.nodes;
+            *containers = snapshot.containers;
+        }
     }
 }
 
@@ -146,6 +100,55 @@ struct ParsedStats {
     mem_pct: f64,
 }
 
+fn collect(products: &[Product]) -> Option<Snapshot> {
+    if !docker_available() {
+        return None;
+    }
+    let mut nodes = Vec::new();
+    let mut containers = Vec::new();
+    for product in products {
+        let project = format!("kodoo-{}", product.label());
+        let discovered = list_project_containers(&project)?;
+        let ids: Vec<&str> = discovered.iter().map(|c| c.id.as_str()).collect();
+        let stats = read_stats(&ids);
+        let node_id = format!("docker-{}", product.label());
+        let mut node_cpu = 0.0;
+        let mut node_ram = 0.0;
+        for item in discovered {
+            let stat = stats.get(&item.id);
+            let cpu = stat.map(|s| s.cpu_pct).unwrap_or(0.0);
+            let ram = stat.map(|s| s.mem_pct).unwrap_or(0.0);
+            node_cpu += cpu;
+            node_ram += ram;
+            containers.push(Container {
+                id: item.id,
+                name: item.name,
+                node_id: node_id.clone(),
+                stack: product.label().to_string(),
+                cpu_share_pct: cpu,
+                ram_share_pct: ram,
+                status: item.status,
+                logs: Vec::new(),
+            });
+        }
+        nodes.push(Node {
+            id: node_id,
+            name: format!("docker-{}", product.label()),
+            region: "local".into(),
+            host: "local Docker context".into(),
+            ssh_user: "local".into(),
+            provider: "Docker Engine".into(),
+            monthly_cost: 0.0,
+            online: true,
+            cpu_pct: node_cpu.clamp(0.0, 100.0),
+            ram_pct: node_ram.clamp(0.0, 100.0),
+            cpu_history: vec![node_cpu.round().clamp(0.0, 100.0) as u64],
+            ram_history: vec![node_ram.round().clamp(0.0, 100.0) as u64],
+        });
+    }
+    Some(Snapshot { nodes, containers })
+}
+
 fn docker_available() -> bool {
     Command::new("docker")
         .args(["info", "--format", "{{.ServerVersion}}"])
@@ -170,10 +173,9 @@ fn list_project_containers(project: &str) -> Option<Vec<DiscoveredContainer>> {
     if !output.status.success() {
         return None;
     }
-
-    let text = String::from_utf8_lossy(&output.stdout);
     Some(
-        text.lines()
+        String::from_utf8_lossy(&output.stdout)
+            .lines()
             .filter_map(|line| {
                 let mut fields = line.splitn(4, '\t');
                 let id = fields.next()?.trim();
@@ -212,7 +214,6 @@ fn read_stats(ids: &[&str]) -> HashMap<String, ParsedStats> {
         Ok(output) if output.status.success() => output,
         _ => return HashMap::new(),
     };
-
     String::from_utf8_lossy(&output.stdout)
         .lines()
         .filter_map(|line| serde_json::from_str::<StatsRow>(line).ok())
@@ -242,7 +243,6 @@ fn parse_percent(value: &str) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::parse_percent;
-
     #[test]
     fn parses_docker_percentages() {
         assert_eq!(parse_percent("12.50%"), 12.5);

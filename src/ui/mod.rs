@@ -143,7 +143,7 @@ fn draw_bridges(f: &mut Frame, area: ratatui::layout::Rect, state: &AppState) {
     match state.bridge_panel {
         BridgePanel::Env => envw::draw(f, area, state),
         BridgePanel::Tunnel => {
-            let has_token = crate::app::env_has_tunnel_token(state.featured_product);
+            let has_token = crate::app::env_has_tunnel_token(&state.featured_product);
             let token_status = if has_token { "configurado" } else { "ausente" };
             let token_color = if has_token {
                 theme::GREEN

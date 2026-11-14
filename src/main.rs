@@ -21,6 +21,7 @@ use ratatui::Terminal;
 use tokio::sync::mpsc;
 
 use crate::app::AppState;
+use crate::domain::discover_products;
 use crate::event::{Action, Event};
 use crate::telemetry::{DockerTelemetryProvider, TelemetryProvider};
 
@@ -91,7 +92,9 @@ async fn main() -> io::Result<()> {
     spawn_input_reader(tx.clone());
     spawn_tick(tx.clone());
 
-    let provider: Box<dyn TelemetryProvider + Send> = Box::new(DockerTelemetryProvider::new());
+    let products = discover_products();
+    let provider: Box<dyn TelemetryProvider + Send> =
+        Box::new(DockerTelemetryProvider::new(products));
     let mut state = AppState::new(provider);
 
     let res = run_app(&mut terminal, &mut state, &mut rx, tx.clone()).await;
