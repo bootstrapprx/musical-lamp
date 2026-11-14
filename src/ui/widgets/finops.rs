@@ -64,24 +64,30 @@ pub fn draw_finops(f: &mut Frame, area: Rect, state: &AppState, focused: bool) {
     let trend = trend_arrow(&node.cpu_history);
     let eff = efficiency_score(node.cpu_pct, node.ram_pct);
     let proj = projected_30d(node.monthly_cost, node.cpu_pct, node.ram_pct);
-    let pct_node = if state.projected_total() > 0.0 {
-        node.monthly_cost / state.projected_total() * 100.0
+    let costs = state.container_costs_map();
+    let allocated: f64 = state
+        .containers_for_selected_node()
+        .iter()
+        .map(|c| costs.get(&c.id).copied().unwrap_or(0.0))
+        .sum();
+    let pct_node = if node.monthly_cost > 0.0 {
+        (allocated / node.monthly_cost * 100.0).clamp(0.0, 100.0)
     } else {
         0.0
     };
     let lines = vec![
         Line::from(vec![
-            Span::styled("Custo atual: ", Style::default().fg(theme::SUBTEXT)),
+            Span::styled("Custo Atual Estimado: ", Style::default().fg(theme::SUBTEXT)),
             Span::styled(
-                format!("${:.2}/mo", node.monthly_cost),
+                format!("${:.2}/mo", allocated),
                 Style::default()
                     .fg(theme::PEACH)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::raw(format!("  ({:.1}% do total)", pct_node)),
+            Span::raw(format!("  ({:.1}% do nó)", pct_node)),
         ]),
         Line::from(vec![
-            Span::styled("Projeção 30d: ", Style::default().fg(theme::SUBTEXT)),
+            Span::styled("Projeção de 30 dias: ", Style::default().fg(theme::SUBTEXT)),
             Span::styled(
                 format!("${:.2}/mo {trend}", proj.0),
                 Style::default().fg(if proj.1 >= 0.0 {
@@ -90,17 +96,16 @@ pub fn draw_finops(f: &mut Frame, area: Rect, state: &AppState, focused: bool) {
                     theme::GREEN
                 }),
             ),
-            Span::raw(format!("  Eficiência: {}", eff)),
         ]),
-        Line::from(vec![Span::styled(
-            format!(
-                "Nó: {} | {} | {}",
+        Line::from(vec![
+            Span::styled("Score de Eficiência: ", Style::default().fg(theme::SUBTEXT)),
+            Span::styled(eff, Style::default().fg(theme::TEXT)),
+            Span::raw(format!(
+                "  | Nó: {} ({})",
                 node.name,
-                node.provider,
                 if node.online { "online" } else { "offline" }
-            ),
-            Style::default().fg(theme::TEXT),
-        )]),
+            )),
+        ]),
     ];
     f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: true }), chunks[3]);
 }
@@ -177,7 +182,11 @@ fn draw_cost_breakdown(f: &mut Frame, area: Rect, state: &AppState) {
     let costs = state.container_costs_map();
     let mut lines = vec![
         Line::from(Span::styled(
-            "Fórmula: custo_container = custo_nó * ((CPU% + RAM%) / 2 / 100)",
+            "Fórmula de rateio: CPU share + RAM share -> custo ($/mês) por container",
+            Style::default().fg(theme::SUBTEXT),
+        )),
+        Line::from(Span::styled(
+            "custo_container = custo_nó * ((CPU% + RAM%) / 2 / 100)",
             Style::default().fg(theme::SUBTEXT),
         )),
         Line::from(Span::raw("")),

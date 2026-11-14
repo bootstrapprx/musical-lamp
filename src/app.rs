@@ -371,11 +371,7 @@ impl AppState {
 
     fn apply_ops_finished(&mut self, product: Product, action: &str, success: bool, summary: String) {
         if let Some(ops) = self.ops_states.get_mut(&product) {
-            ops.last_action = if success {
-                format!("{action}: {summary}")
-            } else {
-                format!("{action}: {summary}")
-            };
+            ops.last_action = format!("{action}: {summary}");
             ops.log_lines.push(format!("[resultado] {summary}"));
             match action {
                 "up" => {
@@ -394,11 +390,6 @@ impl AppState {
                 }
                 "migrate" if !success => {
                     ops.state = StackState::Degraded;
-                }
-                "status" => {
-                    if success && !matches!(ops.state, StackState::Starting | StackState::Stopping) {
-                        // keep current assumption unless clearly running/stopped unknown; leave as-is
-                    }
                 }
                 _ => {}
             }
@@ -508,28 +499,28 @@ impl AppState {
             }
             // Compose Stacks operations / app repos
             KeyCode::Char('u') if self.view == View::ComposeStacks && self.stack_panel == StackPanel::Operations => {
-                return self.run_ops_action("up");
+                self.run_ops_action("up")
             }
             KeyCode::Char('x') if self.view == View::ComposeStacks && self.stack_panel == StackPanel::Operations => {
-                return self.run_ops_action("down");
+                self.run_ops_action("down")
             }
             KeyCode::Char('c') if self.view == View::ComposeStacks && self.stack_panel == StackPanel::Operations => {
-                return self.run_ops_action("status");
+                self.run_ops_action("status")
             }
             KeyCode::Char('f') if self.view == View::ComposeStacks && self.stack_panel == StackPanel::Operations => {
-                return self.run_ops_action("preflight");
+                self.run_ops_action("preflight")
             }
             KeyCode::Char('i') if self.view == View::ComposeStacks && self.stack_panel == StackPanel::Operations => {
-                return self.run_ops_action("onboarding");
+                self.run_ops_action("onboarding")
             }
             KeyCode::Char('m') if self.view == View::ComposeStacks && self.stack_panel == StackPanel::Operations => {
-                return self.run_ops_action("migrate");
+                self.run_ops_action("migrate")
             }
             KeyCode::Char('o') if self.view == View::ComposeStacks && self.stack_panel == StackPanel::Operations => {
-                return self.run_ops_action("logs");
+                self.run_ops_action("logs")
             }
             KeyCode::Enter if self.view == View::ComposeStacks && self.stack_panel == StackPanel::Operations => {
-                return self.run_selected_ops_action();
+                self.run_selected_ops_action()
             }
             KeyCode::Char('a') if self.view == View::ComposeStacks && self.stack_panel == StackPanel::AppRepos => {
                 self.modal = Modal::AddApp(AddAppForm::default()); None
@@ -1148,7 +1139,7 @@ impl AppState {
         if k == "IMAGE_REF" { return "Imagem do produto (caminho/registry). Em produção use tag fixa ou digest @sha256:..."; }
         if k == "DB_PASSWORD" { return "Senha do banco. Gere um segredo forte (hex 24 bytes recomendado)."; }
         if k == "TUNNEL_TOKEN" { return "Token do Cloudflare Tunnel (copie do painel Zero Trust)."; }
-        if k == "CLOUDFLARED_VERSION" { return "Versão/tag fixa da imagem cloudflared (não use latest)."; }
+        if k == "CLOUDFLARED_VERSION" { return "Obsoleto: a versão fixa foi descontinuada. O túnel usa cloudflare/cloudflared:latest com --token."; }
         if k.contains("SUBNET") || k.contains("IP_RANGE") || k.contains("CLOUDFLARED_IP") { return "Endereço/rede IPv4 (CIDR ou IP). Mantenha consistência e sem conflito entre produtos."; }
         if k.contains("URL") || k.contains("HOST") || k.contains("ENDPOINT") { return "URL ou host (ex: https://exemplo.com ou nome/IP)."; }
         if k.contains("PATH") || k.contains("DIR") || k.contains("FILE") { return "Caminho de arquivo ou diretório."; }

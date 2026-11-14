@@ -1,7 +1,27 @@
 [
-  {"id":"1","content":"Entender por que as ações aparecem como simuladas","status":"completed","priority":"high","activeForm":"Analisando as ações simuladas"},
-  {"id":"2","content":"Fazer subir, parar e consultar a stack de verdade","status":"completed","priority":"high","activeForm":"Ligando as ações reais"},
-  {"id":"3","content":"Mostrar o andamento e os resultados reais na tela","status":"completed","priority":"high","activeForm":"Mostrando os resultados"},
-  {"id":"4","content":"Ajustar avisos de simulação e checagens","status":"completed","priority":"high","activeForm":"Ajustando avisos"},
-  {"id":"5","content":"Compilar e conferir se está funcionando","status":"completed","priority":"high","activeForm":"Conferindo o resultado"}
+  {
+    "content": "Estudar o projeto atual e o que já funciona",
+    "status": "completed",
+    "activeForm": "Estudando o projeto atual"
+  },
+  {
+    "content": "Ajustar a configuração do túnel para usar a imagem mais recente do Cloudflare",
+    "status": "completed",
+    "activeForm": "Ajustando a configuração do túnel"
+  },
+  {
+    "content": "Reorganizar a tela principal com a visão do grupo de servidores e dos custos",
+    "status": "completed",
+    "activeForm": "Reorganizando a tela principal"
+  },
+  {
+    "content": "Completar os painéis, abas e janelas para adicionar ou remover servidores",
+    "status": "completed",
+    "activeForm": "Completando painéis e janelas"
+  },
+  {
+    "content": "Testar o programa e corrigir os problemas encontrados",
+    "status": "completed",
+    "activeForm": "Testando e corrigindo problemas"
+  }
 ]

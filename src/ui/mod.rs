@@ -44,21 +44,17 @@ fn draw_header(f: &mut Frame, area: ratatui::layout::Rect, state: &AppState) {
     let left = Paragraph::new(vec![
         Line::from(vec![
             Span::styled(
-                "musical-lamp ",
+                "musical-lamp-tui",
                 Style::default()
                     .fg(theme::MAUVE)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled("v0.1.0", Style::default().fg(theme::SUBTEXT)),
+            Span::styled("  v0.1.0", Style::default().fg(theme::SUBTEXT)),
         ]),
-        Line::from(vec![
-            Span::styled("Produto: ", Style::default().fg(theme::SUBTEXT)),
-            Span::styled(
-                state.featured_product.label(),
-                Style::default().fg(theme::TEAL).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled("  [p] alternar", Style::default().fg(theme::OVERLAY)),
-        ]),
+        Line::from(Span::styled(
+            "Orquestrador SaaS • Docker Compose • FinOps",
+            Style::default().fg(theme::OVERLAY),
+        )),
     ])
     .block(
         Block::default()
@@ -110,7 +106,7 @@ fn draw_header(f: &mut Frame, area: ratatui::layout::Rect, state: &AppState) {
             ),
         ]),
         Line::from(Span::styled(
-            "Custo mensal projetado vs orçamento",
+            "Custo mensal projetado total vs orçamento",
             Style::default().fg(theme::SUBTEXT),
         )),
     ])
@@ -118,7 +114,7 @@ fn draw_header(f: &mut Frame, area: ratatui::layout::Rect, state: &AppState) {
         Block::default()
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
-            .title("FinOps Global"),
+            .title("Resumo financeiro global"),
     );
     f.render_widget(right, cols[2]);
 }
@@ -152,11 +148,11 @@ fn draw_bridges(f: &mut Frame, area: ratatui::layout::Rect, state: &AppState) {
                 Line::from(Span::styled("Bridges & Plugins", Style::default().fg(theme::MAUVE).add_modifier(Modifier::BOLD))),
                 Line::from(""),
                 Line::from(vec![Span::styled("Cloudflare Tunnel (cloudflared): ", Style::default().fg(theme::TEXT)), Span::styled(token_status, Style::default().fg(token_color))]),
-                Line::from("• Serviço executado via Docker Compose (common/compose.base.yaml)."),
-                Line::from("• Configure TUNNEL_TOKEN no painel [Tab] Env (edição com contexto e geração/validação)."),
-                Line::from("• Outros campos de rede do túnel (EDGE_SUBNET/EDGE_IP_RANGE/CLOUDFLARED_IP) devem ser endereços IPv4/CIDR coerentes."),
+                Line::from("• Serviço executado via Docker Compose com cloudflare/cloudflared:latest."),
+                Line::from("• Comando: tunnel --no-autoupdate run --token \"$TUNNEL_TOKEN\" (token definido no .env)."),
+                Line::from("• Configure TUNNEL_TOKEN no painel [Tab] Env. Campos de rede (EDGE_SUBNET/EDGE_IP_RANGE/CLOUDFLARED_IP) devem ser IPv4/CIDR coerentes."),
                 Line::from(""),
-                Line::from(Span::styled("Dica: use [Tab] para alternar entre Env e Tunnel. Em Env, [n] gera segredos para chaves sensíveis e os campos mostram contexto (URL, caminho, imagem, versão).", Style::default().fg(theme::SUBTEXT))),
+                Line::from(Span::styled("Dica: use [Tab] para alternar entre Env e Tunnel. Em Env, [n] gera segredos e os campos mostram contexto (URL, caminho, imagem).", Style::default().fg(theme::SUBTEXT))),
             ];
             let p = Paragraph::new(lines).wrap(Wrap { trim: true }).block(
                 Block::default()
@@ -173,17 +169,27 @@ fn draw_footer(f: &mut Frame, area: ratatui::layout::Rect, state: &AppState) {
     let text = match &state.modal {
         Modal::AddNode(_) => "[Tab] Campo | [Enter] Confirmar | [Esc] Cancelar",
         Modal::DropNode { .. } => "[Tab/←/→] Alternar | [Enter/y] Confirmar | [Esc/n] Cancelar",
-        Modal::AddApp(_) => "[Tab] Campo (URL/Ref) | [Enter] Adicionar app ao bench | [Esc] Cancelar",
+        Modal::AddApp(_) => "[Tab] Campo (URL/Ref) | [Enter] Adicionar | [Esc] Cancelar",
         Modal::None => match state.view {
-            View::ClusterFinOps => "[Tab] Painel | [↑/↓] Navegar | [1-4] Aba detalhe | [a] Add Nó | [d] Drop Nó | [s] Simular carga | [p] Produto | [1-3] Views | [q] Sair",
+            View::ClusterFinOps => {
+                "[Tab] Switch Pane | [↑/↓] Navigate | [1-4] Detail Tab | [a] Add Node | [d] Drop Node | [s] Simulate Load | [q] Quit"
+            }
             View::ComposeStacks => match state.stack_panel {
-                StackPanel::Overview => "[Tab] Operações/Repositórios | [p] Produto | [1-3] Views | [q] Sair",
-                StackPanel::Operations => "[↑/↓] Ação | [Enter] Executar | [u] Subir | [x] Parar | [c] Consultar | [f] Pre-flight | [i] Onboarding | [m] Migrar | [o] Logs | [Tab] Próximo painel | [p] Produto | [q] Sair",
-                StackPanel::AppRepos => "[↑/↓] Selecionar app | [a] Adicionar repo (bench) | [d] Remover | [Tab] Próximo painel | [p] Produto | [q] Sair",
+                StackPanel::Overview => "[Tab] Operações/Repositórios | [p] Produto | [1-3] Views | [q] Quit",
+                StackPanel::Operations => {
+                    "[↑/↓] Ação | [Enter] Executar | [u] Subir | [x] Parar | [c] Consultar | [f] Pre-flight | [m] Migrar | [o] Logs | [Tab] Próximo painel | [q] Quit"
+                }
+                StackPanel::AppRepos => "[↑/↓] Selecionar | [a] Adicionar | [d] Remover | [Tab] Próximo painel | [q] Quit",
             },
             View::BridgesPlugins => match state.bridge_panel {
-                BridgePanel::Env => if state.env_editing { "[Enter] Salvar valor | [Esc] Cancelar" } else { "[↑/↓] Variável | [Enter] Editar | [g] Do exemplo | [n] Gerar segredo | [v] Revelar | [r] Recarregar | [w] Salvar .env | [Tab] Tunnel | [p] Produto | [q] Sair" },
-                BridgePanel::Tunnel => "[Tab] Env (.env/tokens) | [p] Produto | [1-3] Views | [q] Sair",
+                BridgePanel::Env => {
+                    if state.env_editing {
+                        "[Enter] Salvar valor | [Esc] Cancelar"
+                    } else {
+                        "[↑/↓] Variável | [Enter] Editar | [g] Gerar do exemplo | [w] Salvar .env | [Tab] Tunnel | [1-3] Views | [q] Quit"
+                    }
+                }
+                BridgePanel::Tunnel => "[Tab] Env | [1-3] Views | [q] Quit",
             },
         },
     };

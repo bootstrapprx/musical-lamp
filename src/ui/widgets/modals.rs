@@ -8,7 +8,7 @@ use crate::app::{AddAppForm, AddField, AddNodeForm, AppField, AppState};
 use crate::ui::{layout, theme};
 
 pub fn draw_add_node(f: &mut Frame, area: Rect, form: &AddNodeForm) {
-    let area = layout::centered_rect(70, 80, area);
+    let area = layout::centered_rect(60, 50, area);
     f.render_widget(Clear, area);
     let block = Block::default()
         .title("Add Node [a]")
@@ -72,7 +72,7 @@ fn draw_field(f: &mut Frame, area: Rect, label: &str, value: &str, active: bool)
 }
 
 pub fn draw_drop_node(f: &mut Frame, area: Rect, state: &AppState, confirm: bool) {
-    let area = layout::centered_rect(65, 70, area);
+    let area = layout::centered_rect(58, 40, area);
     f.render_widget(Clear, area);
     let block = Block::default()
         .title("Drop Node [d]")

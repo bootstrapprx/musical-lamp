@@ -69,7 +69,6 @@ const REQUIRED: &[&str] = &[
     "IMAGE_REF",
     "DB_PASSWORD",
     "TUNNEL_TOKEN",
-    "CLOUDFLARED_VERSION",
     "EDGE_SUBNET",
     "EDGE_IP_RANGE",
     "CLOUDFLARED_IP",
@@ -123,15 +122,6 @@ pub fn validate_env(env: &EnvFile, env_path: &Path, other: Option<&EnvFile>) -> 
                 Warn,
                 Some("DB_PASSWORD"),
                 "menos de 24 caracteres",
-            ));
-        }
-    }
-    if let Some(v) = env.get("CLOUDFLARED_VERSION").filter(|v| !v.is_empty()) {
-        if v == "latest" {
-            f.push(Finding::new(
-                Error,
-                Some("CLOUDFLARED_VERSION"),
-                "fixe uma tag; latest não é reprodutível",
             ));
         }
     }
