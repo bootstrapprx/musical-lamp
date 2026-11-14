@@ -78,7 +78,9 @@ fn spawn_input_reader(tx: mpsc::UnboundedSender<Event>) {
     tokio::task::spawn_blocking(move || loop {
         if crossterm::event::poll(Duration::from_millis(100)).unwrap_or(false) {
             match crossterm::event::read() {
-                Ok(crossterm::event::Event::Key(key)) => {
+                Ok(crossterm::event::Event::Key(key))
+                    if matches!(key.kind, crossterm::event::KeyEventKind::Press | crossterm::event::KeyEventKind::Repeat) =>
+                {
                     if tx.send(Event::Key(key)).is_err() {
                         break;
                     }

@@ -1,8 +1,5 @@
 [
-  {"id":"1","content":"Corrigir gravação segura do .env no Doctor (arquivo temporário + rename, sem corromper original)","status":"completed","priority":"high"},
-  {"id":"2","content":"Garantir que correções do Doctor só constem como aplicadas após gravação bem-sucedida","status":"completed","priority":"high"},
-  {"id":"3","content":"Adicionar testes para falha de gravação e para escrita recusada no Doctor","status":"in_progress","priority":"high"},
-  {"id":"4","content":"Refatorar TUI para a arquitetura e layout pedidos (TEA, Catppuccin Mocha, painéis e modais)","status":"pending","priority":"high"},
-  {"id":"5","content":"Implementar telemetria/FinOps mock não bloqueante e interações de UI solicitadas","status":"pending","priority":"high"},
-  {"id":"6","content":"Rodar cargo check, clippy e ajustar avisos; validar build","status":"pending","priority":"high"}
+  {"content":"Entender o problema de salvar valores com Enter","status":"completed","activeForm":"Entendendo o problema"},
+  {"content":"Ajustar o comportamento da tecla Enter na interface","status":"completed","activeForm":"Ajustando a tecla Enter"},
+  {"content":"Verificar se o projeto compila corretamente","status":"completed","activeForm":"Verificando a compilação"}
 ]
