@@ -9,7 +9,7 @@
   "status": "ready",
   "note": "Ready: all 2 checks pass.",
   "created_ms": 1794595666281,
-  "updated_ms": 1794681088832,
+  "updated_ms": 1794681324164,
   "checks": [
     {
       "round": 1,
@@ -280,13 +280,31 @@
       "note": "`cargo test --quiet` passed.",
       "artifacts": [],
       "at_ms": 1794681088823
+    },
+    {
+      "round": 16,
+      "check": "build",
+      "passed": true,
+      "similarity": null,
+      "note": "`cargo build --quiet` passed.",
+      "artifacts": [],
+      "at_ms": 1794681323876
+    },
+    {
+      "round": 16,
+      "check": "own-tests",
+      "passed": true,
+      "similarity": null,
+      "note": "`cargo test --quiet` passed.",
+      "artifacts": [],
+      "at_ms": 1794681324161
     }
   ],
   "agent_session": null,
   "agent_session_by": "opencode",
   "capture_deep": true,
   "allowed_actions": [],
-  "last_reply": "Corrigi o comportamento do Doctor para que ele não salve segredos no arquivo de ambiente quando não conseguir garantir permissões restritas: se a proteção falhar, a gravação é cancelada, o conteúdo sensível não fica persistido e a ação passa a ser registrada como falha. Isso vale tanto ao criar o ambiente a partir do exemplo quanto ao preencher e salvar segredos automaticamente.\n\nVerifiquei a alteração compilando e executando os testes do projeto, e tudo concluiu sem erros. A grande evolução completa da interface descrita na sua missão (nova organização de telas, painéis e fluxos de FinOps) ainda não foi refeita nesta etapa, então a aparência e os recursos atuais da TUI permanecem como estavam. Se quiser, no próximo passo posso avançar nessa reformulação visual e de navegação mantendo essa correção de segurança.",
+  "last_reply": "Corrigi o Doctor para tratar o `.env` de forma segura: antes de gravar ou truncar um arquivo que já existe, ele agora restringe as permissões para acesso só do dono, evitando expor novos segredos enquanto o arquivo ainda estiver aberto para outros.\n\nTambém ajustei o fluxo de correção para diferenciar um `.env` inexistente de um `.env` que existe mas não pôde ser lido: nesse caso a correção é interrompida, o arquivo original é preservado e o erro é reportado, sem tentar gravar nem apagar o arquivo.\n\nO problema anterior de mostrar falhas como sucessos continua resolvido. Não avancei na evolução completa da interface pedida na missão principal nesta rodada; se quiser, no próximo passo posso retomar a análise e refatoração da TUI para a arquitetura multi-host/FinOps descrita.",
   "asset_budget_usd": 5.0,
   "generate_assets": false,
   "app_in_root": true,

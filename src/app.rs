@@ -1155,6 +1155,11 @@ impl AppState {
                 if let Some(parent) = path.parent() {
                     fs::create_dir_all(parent).map_err(|e| e.to_string())?;
                 }
+                // Para arquivo existente, restringir permissões ANTES de truncar/escrever,
+                // para não expor segredos caso o arquivo estivesse legível por outros.
+                if path.exists() {
+                    restrict_env_permissions(path)?;
+                }
                 let mut file = fs::OpenOptions::new()
                     .create(true)
                     .write(true)
@@ -1295,51 +1300,71 @@ impl AppState {
                 .any(|i| matches!(i.fix, Some(DoctorFixKind::SaveEnvNormalized)));
             if changed || wants_save_normalized {
                 let target = Path::new(&env_path_s);
-                let previous = if target.exists() {
-                    fs::read_to_string(target).ok()
-                } else {
-                    None
-                };
-                let content = render_env_file(&working_vars);
-                match write_env_secure(target, &content) {
-                    Ok(_) => {
-                        if let Some(env) = self.env_states.get_mut(&product) {
-                            env.dirty = false;
-                            env.last_action = "Doctor aplicou correções e salvou o .env".into();
-                        } else {
-                            self.env_states.insert(product, load_env_state(product));
-                        }
-                        report.applied.push(format!("Salvo products/{label}/.env"));
-                        #[cfg(unix)]
-                        report
-                            .applied
-                            .push("Permissões do .env ajustadas para 600".into());
-                    }
-                    Err(e) => {
-                        // Requisito: não persistir valores secretos se não for possível garantir chmod 600.
-                        if filled > 0 {
-                            if let Some(prev) = previous.as_deref() {
-                                let _ = fs::write(target, prev);
-                                let _ = restrict_env_permissions(target);
-                            } else if created_env {
-                                let _ = fs::remove_file(target);
-                            } else {
-                                let _ = fs::remove_file(target);
-                            }
+                let existed_before = target.exists();
+                let previous = if existed_before {
+                    match fs::read_to_string(target) {
+                        Ok(content) => Some(content),
+                        Err(e) => {
                             report.failed.push(format!(
-                                "Falha ao garantir permissões seguras do .env: {e}. Segredos gerados não foram gravados."
+                                "Falha ao ler .env existente: {e}. Arquivo preservado; nenhuma gravação foi realizada."
                             ));
                             if let Some(env) = self.env_states.get_mut(&product) {
                                 env.dirty = false;
                                 env.last_action =
-                                    "Correção abortada: não foi possível proteger o .env".into();
+                                    "Correção abortada: não foi possível ler o .env existente".into();
                             }
-                        } else {
-                            report.failed.push(format!(
-                                "Falha ao salvar .env com permissões seguras: {e}"
-                            ));
+                            None
                         }
                     }
+                } else {
+                    None
+                };
+                let can_write = !existed_before || previous.is_some();
+                if can_write {
+                    let content = render_env_file(&working_vars);
+                    match write_env_secure(target, &content) {
+                        Ok(_) => {
+                            if let Some(env) = self.env_states.get_mut(&product) {
+                                env.dirty = false;
+                                env.last_action = "Doctor aplicou correções e salvou o .env".into();
+                            } else {
+                                self.env_states.insert(product, load_env_state(product));
+                            }
+                            report.applied.push(format!("Salvo products/{label}/.env"));
+                            #[cfg(unix)]
+                            report
+                                .applied
+                                .push("Permissões do .env ajustadas para 600".into());
+                        }
+                        Err(e) => {
+                            // Requisito: não persistir valores secretos se não for possível garantir chmod 600.
+                            if filled > 0 {
+                                if let Some(prev) = previous.as_deref() {
+                                    let _ = fs::write(target, prev);
+                                    let _ = restrict_env_permissions(target);
+                                } else if created_env || !existed_before {
+                                    // Seguro remover apenas se o arquivo foi criado nesta execução
+                                    // ou não existia antes; nunca remover um .env preexistente.
+                                    let _ = fs::remove_file(target);
+                                }
+                                // Nunca remover um arquivo .env preexistente neste caminho.
+                                report.failed.push(format!(
+                                    "Falha ao garantir permissões seguras do .env: {e}. Segredos gerados não foram gravados."
+                                ));
+                                if let Some(env) = self.env_states.get_mut(&product) {
+                                    env.dirty = false;
+                                    env.last_action =
+                                        "Correção abortada: não foi possível proteger o .env".into();
+                                }
+                            } else {
+                                report.failed.push(format!(
+                                    "Falha ao salvar .env com permissões seguras: {e}"
+                                ));
+                            }
+                        }
+                    }
+                } else {
+                    // Arquivo preexistente ilegível: preservar e não tentar gravar/remover.
                 }
             } else if env_path.exists()
                 && report
