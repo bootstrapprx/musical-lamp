@@ -1,6 +1,5 @@
 [
-  {"id":"1","content":"Entender o diagnóstico do Doctor e o código atual","status":"completed","priority":"high"},
-  {"id":"2","content":"Corrigir permissões do .env ao criar ou salvar com segredos","status":"completed","priority":"high"},
-  {"id":"3","content":"Atualizar o relatório do Doctor após aplicar correções","status":"completed","priority":"medium"},
-  {"id":"4","content":"Verificar compilação e avisos do projeto","status":"completed","priority":"high"}
+  {"id":"1","content":"Analisar o código atual e localizar o problema das permissões do .env","status":"completed","priority":"high"},
+  {"id":"2","content":"Corrigir o Doctor para só gravar segredos com permissões seguras garantidas","status":"completed","priority":"high"},
+  {"id":"3","content":"Compilar e testar para confirmar que a correção não quebrou nada","status":"completed","priority":"high"}
 ]

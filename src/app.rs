@@ -1148,7 +1148,37 @@ impl AppState {
                 fs::set_permissions(path, perms).map_err(|e| e.to_string())
             }
 
+            #[cfg(unix)]
+            fn write_env_secure(path: &Path, content: &str) -> Result<(), String> {
+                use std::io::Write;
+                use std::os::unix::fs::OpenOptionsExt;
+                if let Some(parent) = path.parent() {
+                    fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+                }
+                let mut file = fs::OpenOptions::new()
+                    .create(true)
+                    .write(true)
+                    .truncate(true)
+                    .mode(0o600)
+                    .open(path)
+                    .map_err(|e| e.to_string())?;
+                file.write_all(content.as_bytes())
+                    .map_err(|e| e.to_string())?;
+                file.sync_all().map_err(|e| e.to_string())?;
+                // Garantir explicitamente permissões restritas antes de considerar o segredo persistido.
+                restrict_env_permissions(path)
+            }
+
+            #[cfg(not(unix))]
+            fn write_env_secure(path: &Path, content: &str) -> Result<(), String> {
+                if let Some(parent) = path.parent() {
+                    fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+                }
+                fs::write(path, content).map_err(|e| e.to_string())
+            }
+
             let mut changed = false;
+            let mut created_env = false;
             // 1) create env from example
             if !env_exists
                 && example_exists
@@ -1158,26 +1188,24 @@ impl AppState {
                     .any(|i| matches!(i.fix, Some(DoctorFixKind::CreateEnvFromExample)))
             {
                 if let Ok(content) = fs::read_to_string(example_path) {
-                    if let Some(parent) = env_path.parent() {
-                        let _ = fs::create_dir_all(parent);
-                    }
-                    match fs::write(env_path, &content) {
+                    match write_env_secure(env_path, &content) {
                         Ok(_) => {
                             report.applied.push(format!(
                                 "Criado products/{label}/.env a partir do .env.example"
                             ));
                             #[cfg(unix)]
-                            match restrict_env_permissions(env_path) {
-                                Ok(_) => report
-                                    .applied
-                                    .push("Permissões do .env ajustadas para 600".into()),
-                                Err(e) => report
-                                    .failed
-                                    .push(format!("Falha ao ajustar permissões do .env: {e}")),
-                            }
+                            report
+                                .applied
+                                .push("Permissões do .env ajustadas para 600".into());
                             changed = true;
+                            created_env = true;
                         }
-                        Err(e) => report.failed.push(format!("Falha ao criar .env: {e}")),
+                        Err(e) => {
+                            let _ = fs::remove_file(env_path);
+                            report.failed.push(format!(
+                                "Falha ao criar .env com permissões seguras: {e}. Segredos não foram gravados."
+                            ));
+                        }
                     }
                 }
             }
@@ -1261,18 +1289,19 @@ impl AppState {
             }
 
             // persist env if we changed in-memory or need normalized save
-            if changed
-                || report
-                    .issues
-                    .iter()
-                    .any(|i| matches!(i.fix, Some(DoctorFixKind::SaveEnvNormalized)))
-            {
-                let content = render_env_file(&working_vars);
+            let wants_save_normalized = report
+                .issues
+                .iter()
+                .any(|i| matches!(i.fix, Some(DoctorFixKind::SaveEnvNormalized)));
+            if changed || wants_save_normalized {
                 let target = Path::new(&env_path_s);
-                if let Some(parent) = target.parent() {
-                    let _ = fs::create_dir_all(parent);
-                }
-                match fs::write(target, content) {
+                let previous = if target.exists() {
+                    fs::read_to_string(target).ok()
+                } else {
+                    None
+                };
+                let content = render_env_file(&working_vars);
+                match write_env_secure(target, &content) {
                     Ok(_) => {
                         if let Some(env) = self.env_states.get_mut(&product) {
                             env.dirty = false;
@@ -1282,16 +1311,35 @@ impl AppState {
                         }
                         report.applied.push(format!("Salvo products/{label}/.env"));
                         #[cfg(unix)]
-                        match restrict_env_permissions(target) {
-                            Ok(_) => report
-                                .applied
-                                .push("Permissões do .env ajustadas para 600".into()),
-                            Err(e) => report
-                                .failed
-                                .push(format!("Falha ao ajustar permissões do .env: {e}")),
+                        report
+                            .applied
+                            .push("Permissões do .env ajustadas para 600".into());
+                    }
+                    Err(e) => {
+                        // Requisito: não persistir valores secretos se não for possível garantir chmod 600.
+                        if filled > 0 {
+                            if let Some(prev) = previous.as_deref() {
+                                let _ = fs::write(target, prev);
+                                let _ = restrict_env_permissions(target);
+                            } else if created_env {
+                                let _ = fs::remove_file(target);
+                            } else {
+                                let _ = fs::remove_file(target);
+                            }
+                            report.failed.push(format!(
+                                "Falha ao garantir permissões seguras do .env: {e}. Segredos gerados não foram gravados."
+                            ));
+                            if let Some(env) = self.env_states.get_mut(&product) {
+                                env.dirty = false;
+                                env.last_action =
+                                    "Correção abortada: não foi possível proteger o .env".into();
+                            }
+                        } else {
+                            report.failed.push(format!(
+                                "Falha ao salvar .env com permissões seguras: {e}"
+                            ));
                         }
                     }
-                    Err(e) => report.failed.push(format!("Falha ao salvar .env: {e}")),
                 }
             } else if env_path.exists()
                 && report

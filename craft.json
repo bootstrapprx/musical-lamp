@@ -9,7 +9,7 @@
   "status": "ready",
   "note": "Ready: all 2 checks pass.",
   "created_ms": 1794595666281,
-  "updated_ms": 1794680849226,
+  "updated_ms": 1794681088832,
   "checks": [
     {
       "round": 1,
@@ -262,13 +262,31 @@
       "note": "`cargo test --quiet` passed.",
       "artifacts": [],
       "at_ms": 1794680849218
+    },
+    {
+      "round": 15,
+      "check": "build",
+      "passed": true,
+      "similarity": null,
+      "note": "`cargo build --quiet` passed.",
+      "artifacts": [],
+      "at_ms": 1794681088764
+    },
+    {
+      "round": 15,
+      "check": "own-tests",
+      "passed": true,
+      "similarity": null,
+      "note": "`cargo test --quiet` passed.",
+      "artifacts": [],
+      "at_ms": 1794681088823
     }
   ],
   "agent_session": null,
   "agent_session_by": "opencode",
   "capture_deep": true,
   "allowed_actions": [],
-  "last_reply": "Corrigi o diagnóstico para que ele pare de tratar falhas como sucesso: quando não consegue salvar o arquivo de configuração, criar a cópia inicial ou ajustar as permissões, isso passa a ser registrado como erro separado, não entra na contagem de correções aplicadas e aparece destacado em vermelho na tela.\n\nAs correções que realmente funcionam continuam marcadas como aplicadas em verde, e o resumo final agora distingue correções concluídas de falhas, deixando claro se algo não pôde ser ajustado. A varredura após alternar de produto continua sendo refeita para mostrar o diagnóstico correto do produto atual.\n\nNão avancei na reconstrução completa da interface e da arquitetura descritas no pedido maior; foquei nesta correção para que o resultado do diagnóstico seja confiável. Se quiser, posso seguir com a evolução da tela de orquestração e custos conforme essa especificação.",
+  "last_reply": "Corrigi o comportamento do Doctor para que ele não salve segredos no arquivo de ambiente quando não conseguir garantir permissões restritas: se a proteção falhar, a gravação é cancelada, o conteúdo sensível não fica persistido e a ação passa a ser registrada como falha. Isso vale tanto ao criar o ambiente a partir do exemplo quanto ao preencher e salvar segredos automaticamente.\n\nVerifiquei a alteração compilando e executando os testes do projeto, e tudo concluiu sem erros. A grande evolução completa da interface descrita na sua missão (nova organização de telas, painéis e fluxos de FinOps) ainda não foi refeita nesta etapa, então a aparência e os recursos atuais da TUI permanecem como estavam. Se quiser, no próximo passo posso avançar nessa reformulação visual e de navegação mantendo essa correção de segurança.",
   "asset_budget_usd": 5.0,
   "generate_assets": false,
   "app_in_root": true,
