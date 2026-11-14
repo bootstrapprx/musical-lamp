@@ -1,7 +1,36 @@
 # Observabilidade opcional
 
-O Compose principal continua sem portas de observabilidade e sem Grafana, Prometheus ou OpenTelemetry. Para habilitar o perfil para um produto, use `common/dc.sh <produto> --observability up -d`; para consultar, use `common/dc.sh <produto> --observability ps`; para desligar, use `common/dc.sh <produto> --observability down`.
+O Compose principal continua **sem** Collector, Prometheus e Grafana. Esses serviços só sobem quando o perfil `observability` é ativado explicitamente.
 
-O perfil inicia o OpenTelemetry Collector, que recebe OTLP em `4317` (gRPC) e `4318` (HTTP), expõe métricas Prometheus em `8889`, e encaminha essas métricas para o Prometheus. O Grafana fica disponível em `http://localhost:3000` e o Prometheus em `http://localhost:9090`. O dashboard e a fonte de dados do Grafana ainda são configurados pelo operador.
+## Como usar
 
-Antes de usar em ambiente compartilhado, defina `GRAFANA_ADMIN_PASSWORD` no `.env` do produto. O valor padrão `change-me` existe apenas para tornar o perfil fácil de experimentar localmente e não deve ser usado em produção. Os volumes `prometheus-data` e `grafana-data` são separados por projeto Compose.
+```bash
+common/dc.sh <produto> --observability up -d
+common/dc.sh <produto> --observability ps
+common/dc.sh <produto> --observability logs
+common/dc.sh <produto> --observability down
+```
+
+Substitua `<produto>` pelo diretório do produto em `products/` (por exemplo `accounting`, `trivia` ou um novo produto).
+
+## Portas e serviços (apenas no perfil)
+
+- **OpenTelemetry Collector**: OTLP gRPC `4317`, OTLP HTTP `4318`, endpoint Prometheus interno/exportado `8889`
+- **Prometheus**: `http://localhost:9090` (retenção básica: 7 dias ou 512MB)
+- **Grafana**: `http://localhost:3000` (datasource Prometheus provisionado automaticamente)
+
+## Variáveis e segurança
+
+- `GRAFANA_ADMIN_USER` (padrão: `admin`)
+- `GRAFANA_ADMIN_PASSWORD` (padrão: `change-me`) — **troque antes de usar em ambiente compartilhado/produção**.
+
+Nenhuma credencial real deve ser versionada. Use o `.env` do produto para valores locais.
+
+## Dados e limites
+
+- Volumes nomeados por projeto Compose: `prometheus-data` e `grafana-data`.
+- O Collector **não** é backend de armazenamento de longo prazo; ele recebe/encaminha telemetria conforme configuração.
+
+## Estado atual das métricas
+
+O perfil fornece infraestrutura para receber métricas OTLP e visualizá-las via Prometheus/Grafana. **A aplicação/TUI ainda não emite métricas de negócio via OpenTelemetry** por padrão; para ter métricas da aplicação é necessário instrumentá-la para enviar OTLP ao Collector (`4317/4318`).

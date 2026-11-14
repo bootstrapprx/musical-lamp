@@ -1,7 +1,1 @@
-[
-  {"id":"1","content":"Reviewing what the app already does","status":"completed","priority":"high"},
-  {"id":"2","content":"Applying the requested fixes","status":"completed","priority":"high"},
-  {"id":"3","content":"Shaping the screen to match the requested design","status":"completed","priority":"high"},
-  {"id":"4","content":"Building and checking the app","status":"completed","priority":"high"},
-  {"id":"5","content":"Summarizing what is ready","status":"completed","priority":"medium"}
-]
+[{"id": "1", "content": "Entender o estado atual do projeto e mapear lacunas", "status": "completed", "priority": "high"}, {"id": "2", "content": "Ajustar produtos, .env e Doctor para o fluxo pedido", "status": "in_progress", "priority": "high"}, {"id": "3", "content": "Melhorar opera\u00e7\u00f5es Docker e telemetria sem travar a tela", "status": "pending", "priority": "high"}, {"id": "4", "content": "Atualizar a interface, observabilidade e documenta\u00e7\u00e3o", "status": "pending", "priority": "high"}, {"id": "5", "content": "Adicionar testes e validar o projeto", "status": "pending", "priority": "high"}]

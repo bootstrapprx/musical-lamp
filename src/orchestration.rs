@@ -17,6 +17,10 @@ pub fn build_ops_action(product: &Product, action: &str) -> Option<Action> {
             vec!["common/dc.sh".into(), p, "up".into(), "-d".into()],
         ),
         "down" => ("bash".into(), vec!["common/dc.sh".into(), p, "down".into()]),
+        "restart" => (
+            "bash".into(),
+            vec!["common/dc.sh".into(), p, "restart".into()],
+        ),
         "status" => ("bash".into(), vec!["common/dc.sh".into(), p, "ps".into()]),
         "logs" => (
             "bash".into(),

@@ -71,6 +71,10 @@ pub fn draw(f: &mut Frame, area: Rect, state: &AppState) {
     let actions = [
         ("[u] Subir stack", "Executa: common/dc.sh <produto> up -d"),
         ("[x] Parar stack", "Executa: common/dc.sh <produto> down"),
+        (
+            "[t] Reiniciar stack",
+            "Executa: common/dc.sh <produto> restart",
+        ),
         ("[c] Consultar stack", "Executa: common/dc.sh <produto> ps"),
         ("[f] Pre-flight", "Valida .env, arquivos e prontidão local"),
         (

@@ -1,10 +1,12 @@
 //! Telemetria local do Docker sem bloquear o loop visual da TUI.
 
-use std::collections::HashMap;
-use std::process::Command;
+use std::collections::{HashMap, VecDeque};
+use std::io::Read;
+use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::Deserialize;
 
@@ -14,32 +16,115 @@ pub trait TelemetryProvider {
     fn tick(&mut self, nodes: &mut Vec<Node>, containers: &mut Vec<Container>);
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct TelemetryMeta {
+    #[allow(dead_code)]
+    pub last_success: Option<Instant>,
+    pub last_error: Option<String>,
+    pub docker_available: bool,
+}
+
 #[derive(Clone)]
 struct Snapshot {
     nodes: Vec<Node>,
     containers: Vec<Container>,
+    meta: TelemetryMeta,
 }
 
+#[derive(Clone)]
 pub struct DockerTelemetryProvider {
     cache: Arc<Mutex<Option<Snapshot>>>,
+    stop: Arc<AtomicBool>,
 }
 
 impl DockerTelemetryProvider {
     pub fn new(products: Vec<Product>) -> Self {
+        Self::with_interval(products, Duration::from_secs(5))
+    }
+
+    pub fn with_interval(products: Vec<Product>, interval: Duration) -> Self {
+        let interval = interval.max(Duration::from_secs(2));
         let cache = Arc::new(Mutex::new(None));
+        let stop = Arc::new(AtomicBool::new(false));
         let worker_cache = Arc::clone(&cache);
+        let worker_stop = Arc::clone(&stop);
         thread::Builder::new()
             .name("docker-telemetry".into())
-            .spawn(move || loop {
-                if let Some(snapshot) = collect(&products) {
-                    if let Ok(mut cached) = worker_cache.lock() {
-                        *cached = Some(snapshot);
+            .spawn(move || {
+                let mut backoff = Duration::from_secs(0);
+                let mut history: HashMap<String, (VecDeque<u64>, VecDeque<u64>)> = HashMap::new();
+                loop {
+                    if worker_stop.load(Ordering::Relaxed) {
+                        break;
+                    }
+                    let products_now = if products.is_empty() {
+                        crate::domain::discover_products()
+                    } else {
+                        products.clone()
+                    };
+                    match collect(&products_now, &mut history) {
+                        Ok(mut snapshot) => {
+                            if let Ok(prev) = worker_cache.lock() {
+                                if let Some(prev) = prev.as_ref() {
+                                    // preservar histórico mais longo se já tínhamos nós
+                                    merge_histories(&mut snapshot, prev);
+                                }
+                            }
+                            if let Ok(mut cached) = worker_cache.lock() {
+                                *cached = Some(snapshot);
+                            }
+                            backoff = Duration::from_secs(0);
+                        }
+                        Err(err) => {
+                            if let Ok(mut cached) = worker_cache.lock() {
+                                if let Some(prev) = cached.as_mut() {
+                                    prev.meta.last_error = Some(err.clone());
+                                    prev.meta.docker_available = false;
+                                } else {
+                                    *cached = Some(Snapshot {
+                                        nodes: Vec::new(),
+                                        containers: Vec::new(),
+                                        meta: TelemetryMeta {
+                                            last_success: None,
+                                            last_error: Some(err),
+                                            docker_available: false,
+                                        },
+                                    });
+                                }
+                            }
+                            backoff = if backoff.is_zero() {
+                                Duration::from_secs(5)
+                            } else {
+                                (backoff * 2).min(Duration::from_secs(30))
+                            };
+                        }
+                    }
+                    let sleep_for = if backoff.is_zero() { interval } else { backoff };
+                    let start = Instant::now();
+                    while start.elapsed() < sleep_for {
+                        if worker_stop.load(Ordering::Relaxed) {
+                            return;
+                        }
+                        thread::sleep(Duration::from_millis(200));
                     }
                 }
-                thread::sleep(Duration::from_secs(5));
             })
             .expect("não foi possível iniciar a coleta de telemetria Docker");
-        Self { cache }
+        Self { cache, stop }
+    }
+
+    #[allow(dead_code)]
+    pub fn snapshot(&self) -> Option<(Vec<Node>, Vec<Container>, TelemetryMeta)> {
+        self.cache.lock().ok().and_then(|c| {
+            c.as_ref()
+                .map(|s| (s.nodes.clone(), s.containers.clone(), s.meta.clone()))
+        })
+    }
+}
+
+impl Drop for DockerTelemetryProvider {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Relaxed);
     }
 }
 
@@ -51,11 +136,37 @@ impl Default for DockerTelemetryProvider {
 
 impl TelemetryProvider for DockerTelemetryProvider {
     fn tick(&mut self, nodes: &mut Vec<Node>, containers: &mut Vec<Container>) {
-        // O tick só lê o último snapshot; nenhum processo Docker é iniciado no thread da TUI.
         let snapshot = self.cache.lock().ok().and_then(|cached| cached.clone());
         if let Some(snapshot) = snapshot {
             *nodes = snapshot.nodes;
             *containers = snapshot.containers;
+        }
+    }
+}
+
+fn merge_histories(new_snapshot: &mut Snapshot, prev: &Snapshot) {
+    let mut prev_nodes: HashMap<String, &Node> = HashMap::new();
+    for n in &prev.nodes {
+        prev_nodes.insert(n.id.clone(), n);
+    }
+    for n in &mut new_snapshot.nodes {
+        if let Some(old) = prev_nodes.get(&n.id) {
+            let mut cpu: Vec<u64> = old.cpu_history.clone();
+            if let Some(last) = n.cpu_history.last() {
+                cpu.push(*last);
+            }
+            let mut ram: Vec<u64> = old.ram_history.clone();
+            if let Some(last) = n.ram_history.last() {
+                ram.push(*last);
+            }
+            if cpu.len() > 30 {
+                cpu.drain(0..cpu.len() - 30);
+            }
+            if ram.len() > 30 {
+                ram.drain(0..ram.len() - 30);
+            }
+            n.cpu_history = cpu;
+            n.ram_history = ram;
         }
     }
 }
@@ -76,7 +187,7 @@ impl TelemetryProvider for MockTelemetryProvider {
 }
 
 #[derive(Debug, Clone)]
-struct DiscoveredContainer {
+pub struct DiscoveredContainer {
     id: String,
     name: String,
     status: String,
@@ -84,141 +195,208 @@ struct DiscoveredContainer {
 
 #[derive(Debug, Deserialize)]
 struct StatsRow {
-    #[serde(rename = "ID")]
+    #[serde(rename = "ID", default)]
     id: String,
-    #[serde(rename = "Name")]
+    #[serde(rename = "Name", default)]
     name: String,
-    #[serde(rename = "CPUPerc")]
+    #[serde(rename = "CPUPerc", default)]
     cpu: String,
-    #[serde(rename = "MemPerc")]
+    #[serde(rename = "MemPerc", default)]
     memory: String,
+    #[serde(rename = "Container", default)]
+    container: String,
 }
 
 #[derive(Debug, Clone, Copy)]
-struct ParsedStats {
-    cpu_pct: f64,
-    mem_pct: f64,
+pub struct ParsedStats {
+    pub cpu_pct: f64,
+    pub mem_pct: f64,
 }
 
-fn collect(products: &[Product]) -> Option<Snapshot> {
-    if !docker_available() {
-        return None;
-    }
-    let mut nodes = Vec::new();
-    let mut containers = Vec::new();
-    for product in products {
-        let project = format!("kodoo-{}", product.label());
-        let discovered = list_project_containers(&project)?;
-        let ids: Vec<&str> = discovered.iter().map(|c| c.id.as_str()).collect();
-        let stats = read_stats(&ids);
-        let node_id = format!("docker-{}", product.label());
-        let mut node_cpu = 0.0;
-        let mut node_ram = 0.0;
-        for item in discovered {
-            let stat = stats.get(&item.id);
-            let cpu = stat.map(|s| s.cpu_pct).unwrap_or(0.0);
-            let ram = stat.map(|s| s.mem_pct).unwrap_or(0.0);
-            node_cpu += cpu;
-            node_ram += ram;
-            containers.push(Container {
-                id: item.id,
-                name: item.name,
-                node_id: node_id.clone(),
-                stack: product.label().to_string(),
-                cpu_share_pct: cpu,
-                ram_share_pct: ram,
-                status: item.status,
-                logs: Vec::new(),
+fn run_docker(args: &[&str], timeout: Duration) -> Result<std::process::Output, String> {
+    let mut child = Command::new("docker")
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("falha ao executar docker: {e}"))?;
+    let start = Instant::now();
+    loop {
+        if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
+            let mut stdout = Vec::new();
+            let mut stderr = Vec::new();
+            if let Some(mut s) = child.stdout.take() {
+                let _ = s.read_to_end(&mut stdout);
+            }
+            if let Some(mut s) = child.stderr.take() {
+                let _ = s.read_to_end(&mut stderr);
+            }
+            return Ok(std::process::Output {
+                status,
+                stdout,
+                stderr,
             });
         }
-        nodes.push(Node {
-            id: node_id,
-            name: format!("docker-{}", product.label()),
-            region: "local".into(),
-            host: "local Docker context".into(),
-            ssh_user: "local".into(),
-            provider: "Docker Engine".into(),
-            monthly_cost: 0.0,
-            online: true,
-            cpu_pct: node_cpu.clamp(0.0, 100.0),
-            ram_pct: node_ram.clamp(0.0, 100.0),
-            cpu_history: vec![node_cpu.round().clamp(0.0, 100.0) as u64],
-            ram_history: vec![node_ram.round().clamp(0.0, 100.0) as u64],
-        });
+        if start.elapsed() > timeout {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(format!(
+                "timeout ao executar docker {}",
+                args.first().copied().unwrap_or("")
+            ));
+        }
+        thread::sleep(Duration::from_millis(50));
     }
-    Some(Snapshot { nodes, containers })
 }
 
-fn docker_available() -> bool {
-    Command::new("docker")
-        .args(["info", "--format", "{{.ServerVersion}}"])
-        .output()
-        .map(|output| output.status.success())
-        .unwrap_or(false)
+fn collect(
+    products: &[Product],
+    _history: &mut HashMap<String, (VecDeque<u64>, VecDeque<u64>)>,
+) -> Result<Snapshot, String> {
+    // Uma verificação leve: se docker ps falhar por daemon indisponível, tratamos como indisponível.
+    let mut nodes = Vec::new();
+    let mut containers = Vec::new();
+    let mut had_any_success = false;
+    let mut last_err: Option<String> = None;
+
+    for product in products {
+        let project = format!("kodoo-{}", product.label());
+        match list_project_containers(&project) {
+            Ok(discovered) => {
+                had_any_success = true;
+                let ids: Vec<&str> = discovered.iter().map(|c| c.id.as_str()).collect();
+                let stats = read_stats(&ids);
+                let node_id = format!("docker-{}", product.label());
+                let mut node_cpu = 0.0;
+                let mut node_ram = 0.0;
+                for item in discovered {
+                    let stat = stats.get(&item.id).or_else(|| stats.get(&item.name));
+                    let cpu = stat.map(|s| s.cpu_pct).unwrap_or(0.0);
+                    let ram = stat.map(|s| s.mem_pct).unwrap_or(0.0);
+                    node_cpu += cpu;
+                    node_ram += ram;
+                    containers.push(Container {
+                        id: item.id,
+                        name: item.name,
+                        node_id: node_id.clone(),
+                        stack: product.label().to_string(),
+                        cpu_share_pct: cpu,
+                        ram_share_pct: ram,
+                        status: item.status,
+                        logs: Vec::new(),
+                    });
+                }
+                nodes.push(Node {
+                    id: node_id,
+                    name: format!("docker-{}", product.label()),
+                    region: "local".into(),
+                    host: "local Docker context".into(),
+                    ssh_user: "local".into(),
+                    provider: "Docker Engine".into(),
+                    monthly_cost: 0.0,
+                    online: true,
+                    cpu_pct: node_cpu.clamp(0.0, 100.0),
+                    ram_pct: node_ram.clamp(0.0, 100.0),
+                    cpu_history: vec![node_cpu.round().clamp(0.0, 100.0) as u64],
+                    ram_history: vec![node_ram.round().clamp(0.0, 100.0) as u64],
+                });
+            }
+            Err(e) => {
+                last_err = Some(e);
+            }
+        }
+    }
+
+    if !had_any_success {
+        return Err(last_err.unwrap_or_else(|| "Docker indisponível".into()));
+    }
+
+    Ok(Snapshot {
+        nodes,
+        containers,
+        meta: TelemetryMeta {
+            last_success: Some(Instant::now()),
+            last_error: last_err,
+            docker_available: true,
+        },
+    })
 }
 
-fn list_project_containers(project: &str) -> Option<Vec<DiscoveredContainer>> {
+pub fn list_project_containers(project: &str) -> Result<Vec<DiscoveredContainer>, String> {
     let filter = format!("label=com.docker.compose.project={project}");
-    let output = Command::new("docker")
-        .args([
+    let output = run_docker(
+        &[
             "ps",
             "--all",
             "--filter",
             &filter,
             "--format",
             "{{.ID}}\t{{.Names}}\t{{.State}}\t{{.Label \"com.docker.compose.service\"}}",
-        ])
-        .output()
-        .ok()?;
+        ],
+        Duration::from_secs(4),
+    )?;
     if !output.status.success() {
-        return None;
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(if stderr.is_empty() {
+            "docker ps falhou".into()
+        } else {
+            stderr
+        });
     }
-    Some(
-        String::from_utf8_lossy(&output.stdout)
-            .lines()
-            .filter_map(|line| {
-                let mut fields = line.splitn(4, '\t');
-                let id = fields.next()?.trim();
-                let name = fields.next()?.trim();
-                let state = fields.next()?.trim();
-                let service = fields.next().unwrap_or_default().trim();
-                if id.is_empty() || name.is_empty() {
-                    return None;
-                }
-                Some(DiscoveredContainer {
-                    id: id.to_string(),
-                    name: if service.is_empty() {
-                        name.to_string()
-                    } else {
-                        format!("{service} ({name})")
-                    },
-                    status: state.to_string(),
-                })
-            })
-            .collect(),
-    )
+    Ok(parse_ps_output(&String::from_utf8_lossy(&output.stdout)))
 }
 
-fn read_stats(ids: &[&str]) -> HashMap<String, ParsedStats> {
+pub fn parse_ps_output(output: &str) -> Vec<DiscoveredContainer> {
+    output
+        .lines()
+        .filter_map(|line| {
+            let mut fields = line.splitn(4, '\t');
+            let id = fields.next()?.trim();
+            let name = fields.next()?.trim();
+            let state = fields.next()?.trim();
+            let service = fields.next().unwrap_or_default().trim();
+            if id.is_empty() || name.is_empty() {
+                return None;
+            }
+            Some(DiscoveredContainer {
+                id: id.to_string(),
+                name: if service.is_empty() {
+                    name.to_string()
+                } else {
+                    format!("{service} ({name})")
+                },
+                status: state.to_string(),
+            })
+        })
+        .collect()
+}
+
+pub fn read_stats(ids: &[&str]) -> HashMap<String, ParsedStats> {
     if ids.is_empty() {
         return HashMap::new();
     }
-    let output = match Command::new("docker")
-        .arg("stats")
-        .arg("--no-stream")
-        .arg("--format")
-        .arg("{{json .}}")
-        .args(ids)
-        .output()
-    {
+    let mut args: Vec<&str> = vec!["stats", "--no-stream", "--format", "{{json .}}"];
+    args.extend_from_slice(ids);
+    let output = match run_docker(&args, Duration::from_secs(5)) {
         Ok(output) if output.status.success() => output,
         _ => return HashMap::new(),
     };
-    String::from_utf8_lossy(&output.stdout)
+    parse_stats_output(&String::from_utf8_lossy(&output.stdout))
+}
+
+pub fn parse_stats_output(output: &str) -> HashMap<String, ParsedStats> {
+    output
         .lines()
         .filter_map(|line| serde_json::from_str::<StatsRow>(line).ok())
         .map(|row| {
-            let key = if row.id.is_empty() { row.name } else { row.id };
+            let key = if !row.id.is_empty() {
+                row.id
+            } else if !row.container.is_empty() {
+                row.container
+            } else {
+                row.name.clone()
+            };
             (
                 key,
                 ParsedStats {
@@ -230,7 +408,7 @@ fn read_stats(ids: &[&str]) -> HashMap<String, ParsedStats> {
         .collect()
 }
 
-fn parse_percent(value: &str) -> f64 {
+pub fn parse_percent(value: &str) -> f64 {
     value
         .trim()
         .trim_end_matches('%')
@@ -242,11 +420,39 @@ fn parse_percent(value: &str) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_percent;
+    use super::*;
+
     #[test]
     fn parses_docker_percentages() {
         assert_eq!(parse_percent("12.50%"), 12.5);
         assert_eq!(parse_percent("0,75%"), 0.75);
         assert_eq!(parse_percent("--"), 0.0);
+    }
+
+    #[test]
+    fn parses_ps_output_with_service() {
+        let out = "abc123\tkodoo-demo-backend-1\trunning\tbackend\n";
+        let items = parse_ps_output(out);
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].id, "abc123");
+        assert!(items[0].name.contains("backend"));
+        assert_eq!(items[0].status, "running");
+    }
+
+    #[test]
+    fn parses_stats_output_tolerates_invalid_lines() {
+        let out =
+            "{\"ID\":\"abc\",\"Name\":\"n\",\"CPUPerc\":\"1.5%\",\"MemPerc\":\"2.0%\"}\n{bad}\n";
+        let stats = parse_stats_output(out);
+        assert_eq!(stats.len(), 1);
+        assert!((stats.get("abc").unwrap().cpu_pct - 1.5).abs() < 0.001);
+    }
+
+    #[test]
+    fn empty_snapshot_is_ok() {
+        let items = parse_ps_output("");
+        assert!(items.is_empty());
+        let stats = parse_stats_output("");
+        assert!(stats.is_empty());
     }
 }

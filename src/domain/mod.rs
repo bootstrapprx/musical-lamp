@@ -49,33 +49,126 @@ impl Product {
     pub fn label(&self) -> &str {
         &self.id
     }
+
+    pub fn is_valid_id(id: &str) -> bool {
+        !id.is_empty()
+            && id != "."
+            && id != ".."
+            && !id.contains('/')
+            && !id.contains('\\')
+            && !id.chars().any(|c| c.is_control())
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ProductStatus {
+    Ready,
+    NoEnv,
+    Invalid(String),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProductEntry {
+    pub product: Product,
+    pub status: ProductStatus,
 }
 
 pub fn discover_products() -> Vec<Product> {
+    discover_product_entries()
+        .into_iter()
+        .map(|e| e.product)
+        .collect()
+}
+
+pub fn discover_product_entries() -> Vec<ProductEntry> {
     let root = Path::new("products");
-    let mut products: Vec<Product> = fs::read_dir(root)
+    let mut entries: Vec<ProductEntry> = fs::read_dir(root)
         .ok()
         .into_iter()
         .flat_map(|entries| entries.filter_map(Result::ok))
         .filter_map(|entry| {
             let path = entry.path();
-            if !path.is_dir() {
+            let Ok(file_type) = entry.file_type() else {
+                return None;
+            };
+            if !file_type.is_dir() {
                 return None;
             }
-            let valid = ["apps.json", "build.env", ".env.example"]
+            let raw_name = entry.file_name();
+            let name = raw_name.to_string_lossy().to_string();
+            let has_marker = ["apps.json", "build.env", ".env.example", ".env"]
                 .iter()
                 .any(|name| path.join(name).is_file());
-            valid.then(|| Product::new(entry.file_name().to_string_lossy()))
+            if !has_marker {
+                return None;
+            }
+            if !Product::is_valid_id(&name) {
+                return Some(ProductEntry {
+                    product: Product::new(name.clone()),
+                    status: ProductStatus::Invalid("nome de diretório inválido/inseguro".into()),
+                });
+            }
+            let status = if path.join(".env").is_file() || path.join(".env").is_symlink() {
+                ProductStatus::Ready
+            } else if path.join(".env.example").is_file() {
+                ProductStatus::NoEnv
+            } else {
+                ProductStatus::Ready
+            };
+            Some(ProductEntry {
+                product: Product::new(name),
+                status,
+            })
         })
         .collect();
-    products.sort_by(|a, b| a.label().cmp(b.label()));
-    products
+    entries.sort_by(|a, b| a.product.label().cmp(b.product.label()));
+    entries
 }
 
 pub fn other_product(product: &Product) -> Option<Product> {
     discover_products()
         .into_iter()
         .find(|candidate| candidate != product)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn rejects_invalid_product_ids() {
+        assert!(!Product::is_valid_id(""));
+        assert!(!Product::is_valid_id("."));
+        assert!(!Product::is_valid_id(".."));
+        assert!(!Product::is_valid_id("a/b"));
+        assert!(!Product::is_valid_id("a\\b"));
+        assert!(Product::is_valid_id("demo-product_1"));
+    }
+
+    #[test]
+    fn discovers_products_deterministically_in_temp_dir() {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let base = std::env::temp_dir().join(format!("musical-lamp-domain-{nanos}"));
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(base.join("products/beta")).unwrap();
+        fs::create_dir_all(base.join("products/alpha")).unwrap();
+        fs::create_dir_all(base.join("products/invalid/name")).unwrap();
+        fs::write(base.join("products/beta/.env.example"), "A=1\n").unwrap();
+        fs::write(base.join("products/alpha/apps.json"), "[]\n").unwrap();
+        let prev = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&base).unwrap();
+        let products = discover_products();
+        std::env::set_current_dir(prev).unwrap();
+        let _ = fs::remove_dir_all(&base);
+        assert_eq!(
+            products.iter().map(|p| p.label()).collect::<Vec<_>>(),
+            vec!["alpha", "beta"]
+        );
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

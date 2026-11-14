@@ -74,6 +74,31 @@ const REQUIRED: &[&str] = &[
     "CLOUDFLARED_IP",
 ];
 
+const PLACEHOLDERS: &[&str] = &[
+    "changeme",
+    "change-me",
+    "change_me",
+    "example",
+    "placeholder",
+    "todo",
+    "replace",
+    "your-",
+    "your_",
+    "secret",
+    "password",
+];
+
+fn looks_like_placeholder(key: &str, value: &str) -> bool {
+    let v = value.trim().to_ascii_lowercase();
+    if v.is_empty() {
+        return false;
+    }
+    if v.contains("release") && key == "IMAGE_REF" {
+        return true;
+    }
+    PLACEHOLDERS.iter().any(|p| v == *p || v.contains(p))
+}
+
 pub fn validate_env(env: &EnvFile, env_path: &Path, other: Option<&EnvFile>) -> Vec<Finding> {
     use Severity::*;
     let mut f = Vec::new();
@@ -113,6 +138,24 @@ pub fn validate_env(env: &EnvFile, env_path: &Path, other: Option<&EnvFile>) -> 
                     Some("IMAGE_REF"),
                     "em produção prefira digest @sha256:...",
                 )),
+            }
+        }
+    }
+
+    for key in env.keys() {
+        if let Some(v) = env.get(key) {
+            if looks_like_placeholder(key, v) && key != "IMAGE_REF" {
+                f.push(Finding::new(
+                    Warn,
+                    Some(key),
+                    "valor parece placeholder/exemplo; revise antes de usar",
+                ));
+            }
+            if (key.contains("PORT") || key.ends_with("_PORT"))
+                && !v.trim().is_empty()
+                && v.trim().parse::<u16>().is_err()
+            {
+                f.push(Finding::new(Warn, Some(key), "porta inválida"));
             }
         }
     }

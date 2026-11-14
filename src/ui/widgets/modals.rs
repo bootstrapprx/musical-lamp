@@ -4,7 +4,9 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, Clear, List, ListItem, Paragraph, Wrap};
 use ratatui::Frame;
 
-use crate::app::{AddAppForm, AddField, AddNodeForm, AppField, AppState, RefMode};
+use crate::app::{
+    AddAppForm, AddField, AddNodeForm, AppField, AppState, RefMode, ResetEnvForm, ResetEnvMode,
+};
 use crate::ui::{layout, theme};
 
 pub fn draw_add_node(f: &mut Frame, area: Rect, form: &AddNodeForm) {
@@ -391,4 +393,145 @@ pub fn draw_add_app(f: &mut Frame, area: Rect, form: &AddAppForm) {
         .style(Style::default().fg(theme::SUBTEXT))
         .wrap(Wrap { trim: true });
     f.render_widget(hint, rows[5]);
+}
+
+pub fn draw_reset_env(f: &mut Frame, area: Rect, form: &ResetEnvForm) {
+    let area = layout::centered_rect(70, 50, area);
+    f.render_widget(Clear, area);
+    f.render_widget(
+        Block::default().style(Style::default().bg(theme::MANTLE)),
+        area,
+    );
+    let block = Block::default()
+        .title(format!("Reset .env — {}", form.product.label()))
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(theme::RED));
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    let modes = [
+        (
+            ResetEnvMode::RestoreExample,
+            "Restaurar do .env.example",
+            "Substitui o .env atual pelo exemplo (com backup).",
+        ),
+        (
+            ResetEnvMode::RemoveEnv,
+            "Remover o .env",
+            "Remove o arquivo .env do produto (com backup).",
+        ),
+        (
+            ResetEnvMode::RestoreBackup,
+            "Restaurar backup",
+            "Restaura o backup .env.bak mais recente.",
+        ),
+    ];
+
+    let mut lines = vec![
+        Line::from(Span::styled("Ação destrutiva: afeta apenas o .env deste produto. Não altera volumes nem outras stacks.", Style::default().fg(theme::YELLOW))),
+        Line::from(""),
+    ];
+    for (mode, label, desc) in modes {
+        let selected = mode == form.mode;
+        lines.push(Line::from(vec![
+            Span::styled(
+                if selected { "› " } else { "  " },
+                Style::default().fg(if selected {
+                    theme::BLUE
+                } else {
+                    theme::SUBTEXT
+                }),
+            ),
+            Span::styled(
+                label,
+                Style::default()
+                    .fg(if selected {
+                        theme::TEXT
+                    } else {
+                        theme::SUBTEXT
+                    })
+                    .add_modifier(if selected {
+                        Modifier::BOLD
+                    } else {
+                        Modifier::empty()
+                    }),
+            ),
+            Span::styled(format!(" — {desc}"), Style::default().fg(theme::SUBTEXT)),
+        ]));
+    }
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        format!(
+            "Para confirmar, digite o nome do produto: {}",
+            form.product.label()
+        ),
+        Style::default().fg(theme::PEACH),
+    )));
+    lines.push(Line::from(vec![
+        Span::styled("Confirmação: ", Style::default().fg(theme::SUBTEXT)),
+        Span::styled(
+            form.confirm_input.clone(),
+            Style::default()
+                .fg(theme::TEXT)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ]));
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "↑/↓ seleciona modo | Enter executa | Esc cancela",
+        Style::default().fg(theme::SUBTEXT),
+    )));
+
+    let p = Paragraph::new(lines).wrap(Wrap { trim: true });
+    f.render_widget(p, inner);
+}
+
+pub fn draw_confirm_text(
+    f: &mut Frame,
+    area: Rect,
+    title: &str,
+    message: &str,
+    required: &str,
+    input: &str,
+) {
+    let area = layout::centered_rect(70, 35, area);
+    f.render_widget(Clear, area);
+    f.render_widget(
+        Block::default().style(Style::default().bg(theme::MANTLE)),
+        area,
+    );
+    let block = Block::default()
+        .title(title)
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(theme::YELLOW));
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    let lines = vec![
+        Line::from(Span::styled(
+            message.to_string(),
+            Style::default().fg(theme::TEXT),
+        )),
+        Line::from(""),
+        Line::from(Span::styled(
+            format!("Digite: {required}"),
+            Style::default().fg(theme::PEACH),
+        )),
+        Line::from(vec![
+            Span::styled("> ", Style::default().fg(theme::BLUE)),
+            Span::styled(
+                input.to_string(),
+                Style::default()
+                    .fg(theme::TEXT)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ]),
+        Line::from(""),
+        Line::from(Span::styled(
+            "Enter confirma | Esc cancela",
+            Style::default().fg(theme::SUBTEXT),
+        )),
+    ];
+    f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: true }), inner);
 }

@@ -50,11 +50,43 @@ pub enum BridgePanel {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ResetEnvMode {
+    RestoreExample,
+    RemoveEnv,
+    RestoreBackup,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResetEnvForm {
+    pub product: Product,
+    pub mode: ResetEnvMode,
+    pub confirm_input: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Modal {
     None,
     AddNode(AddNodeForm),
-    DropNode { confirm: bool },
+    DropNode {
+        confirm: bool,
+    },
     AddApp(AddAppForm),
+    ResetEnv(ResetEnvForm),
+    ConfirmText {
+        title: String,
+        message: String,
+        required: String,
+        input: String,
+        action: ConfirmAction,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConfirmAction {
+    OverwriteEnvFromExample(Product),
+    QuitApp,
+    SwitchProduct(Product),
+    RunOps { product: Product, action: String },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -161,6 +193,8 @@ pub struct AppState {
     pub stack_panel: StackPanel,
     pub bridge_panel: BridgePanel,
     pub modal: Modal,
+    pub pending_switch_to: Option<Product>,
+    pub catalog_notice: Option<String>,
     pub nodes: Vec<Node>,
     pub containers: Vec<Container>,
     pub selected_node: usize,
@@ -187,11 +221,18 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(telemetry: Box<dyn TelemetryProvider + Send>) -> Self {
-        let products = discover_products();
-        let products = if products.is_empty() {
+        let discovered = discover_products();
+        let catalog_notice = if discovered.is_empty() {
+            Some(
+                "Nenhum produto encontrado em products/ (modo sem produto configurado)".to_string(),
+            )
+        } else {
+            None
+        };
+        let products = if discovered.is_empty() {
             vec![Product::new("default")]
         } else {
-            products
+            discovered
         };
         let featured_product = products[0].clone();
         // Não inventar hosts/containers: o provider popula os dados a partir do
@@ -200,7 +241,7 @@ impl AppState {
         let containers = Vec::new();
         let mut env_states = HashMap::new();
         for product in &products {
-            env_states.insert(product.clone(), load_env_state(&product));
+            env_states.insert(product.clone(), load_env_state(product));
         }
         let mut ops_states = HashMap::new();
         for p in &products {
@@ -227,6 +268,8 @@ impl AppState {
             stack_panel: StackPanel::Overview,
             bridge_panel: BridgePanel::Env,
             modal: Modal::None,
+            pending_switch_to: None,
+            catalog_notice,
             nodes,
             containers,
             selected_node: 0,
@@ -349,6 +392,13 @@ impl AppState {
                         StackState::Degraded
                     };
                 }
+                "restart" => {
+                    ops.state = if success {
+                        StackState::Running
+                    } else {
+                        StackState::Degraded
+                    };
+                }
                 "migrate" if !success => {
                     ops.state = StackState::Degraded;
                 }
@@ -363,6 +413,8 @@ impl AppState {
             Modal::AddNode(_) => return self.handle_add_node_key(key),
             Modal::DropNode { .. } => return self.handle_drop_node_key(key),
             Modal::AddApp(_) => return self.handle_add_app_key(key),
+            Modal::ResetEnv(_) => return self.handle_reset_env_key(key),
+            Modal::ConfirmText { .. } => return self.handle_confirm_text_key(key),
             Modal::None => {}
         }
 
@@ -377,7 +429,20 @@ impl AppState {
         }
 
         match key.code {
-            KeyCode::Char('q') => Some(Action::Quit),
+            KeyCode::Char('q') => {
+                if self.current_env().map(|e| e.dirty).unwrap_or(false) {
+                    self.modal = Modal::ConfirmText {
+                        title: "Sair com alterações não salvas".into(),
+                        message: format!("O .env de {} tem alterações não salvas. Digite 'SAIR' para sair sem salvar.", self.featured_product.label()),
+                        required: "SAIR".into(),
+                        input: String::new(),
+                        action: ConfirmAction::QuitApp,
+                    };
+                    None
+                } else {
+                    Some(Action::Quit)
+                }
+            }
             KeyCode::Char('1') => {
                 if self.view == View::ClusterFinOps && self.focus == FocusPane::Detail {
                     self.detail_tab = DetailTab::Logs;
@@ -436,14 +501,20 @@ impl AppState {
                     .position(|product| product == &self.featured_product)
                 {
                     let next = (index + 1) % self.products.len();
-                    self.featured_product = self.products[next].clone();
+                    let target = self.products[next].clone();
+                    if self.current_env().map(|e| e.dirty).unwrap_or(false) {
+                        self.pending_switch_to = Some(target.clone());
+                        self.modal = Modal::ConfirmText {
+                            title: "Alterações não salvas".into(),
+                            message: format!("O .env de {} tem alterações não salvas. Digite '{}' para trocar de produto e descartar salvamento automático (use [w] antes se quiser salvar).", self.featured_product.label(), target.label()),
+                            required: target.label().to_string(),
+                            input: String::new(),
+                            action: ConfirmAction::SwitchProduct(target),
+                        };
+                    } else {
+                        self.switch_to_product(target);
+                    }
                 }
-                self.clamp_env_selection();
-                self.preflight.clear();
-                self.preflight_ran = false;
-                self.refresh_onboarding();
-                self.run_doctor_scan(false);
-                self.apps_selected = 0;
                 if let Modal::AddApp(ref mut form) = self.modal {
                     form.ref_options = Self::ref_options_for_product(&self.featured_product);
                     form.ref_selected = 0;
@@ -496,6 +567,12 @@ impl AppState {
                     && self.stack_panel == StackPanel::Operations =>
             {
                 self.run_ops_action("down")
+            }
+            KeyCode::Char('t')
+                if self.view == View::ComposeStacks
+                    && self.stack_panel == StackPanel::Operations =>
+            {
+                self.run_ops_action("restart")
             }
             KeyCode::Char('c')
                 if self.view == View::ComposeStacks
@@ -582,6 +659,23 @@ impl AppState {
                 self.save_env();
                 None
             }
+            KeyCode::Char('R')
+                if self.view == View::BridgesPlugins && self.bridge_panel == BridgePanel::Env =>
+            {
+                self.modal = Modal::ResetEnv(ResetEnvForm {
+                    product: self.featured_product.clone(),
+                    mode: ResetEnvMode::RestoreExample,
+                    confirm_input: String::new(),
+                });
+                None
+            }
+            KeyCode::Char('L') => {
+                self.reload_product_catalog();
+                if let Some(ops) = self.ops_states.get_mut(&self.featured_product) {
+                    ops.last_action = "catálogo de produtos recarregado".into();
+                }
+                None
+            }
             KeyCode::Char('v')
                 if self.view == View::BridgesPlugins && self.bridge_panel == BridgePanel::Env =>
             {
@@ -651,7 +745,7 @@ impl AppState {
             },
             View::ComposeStacks => match self.stack_panel {
                 StackPanel::Operations => {
-                    if self.ops_selected_action < 7 {
+                    if self.ops_selected_action < 8 {
                         self.ops_selected_action += 1;
                     }
                 }
@@ -735,26 +829,7 @@ impl AppState {
 
     fn generate_env_from_example(&mut self) {
         let product = self.featured_product.clone();
-        let example = product_env_example_path(&product);
-        let target = product_env_path(&product);
-        match fs::read_to_string(&example) {
-            Ok(content) => {
-                let vars = parse_env_vars(&content);
-                if let Some(env) = self.env_states.get_mut(&product) {
-                    env.vars = vars;
-                    env.dirty = true;
-                    env.last_action = format!("gerado a partir de {} (não salvo)", example);
-                    env.path_hint = target;
-                }
-            }
-            Err(e) => {
-                if let Some(env) = self.env_states.get_mut(&product) {
-                    env.last_action = format!("falha ao ler exemplo: {e}");
-                }
-            }
-        }
-        self.refresh_onboarding();
-        self.run_doctor_scan(false);
+        self.generate_env_from_example_for(&product, false);
     }
 
     fn toggle_env_reveal(&mut self) {
@@ -802,18 +877,23 @@ impl AppState {
 
     fn save_env(&mut self) {
         let product = self.featured_product.clone();
-        let path = product_env_path(&product);
+        let path_s = product_env_path(&product);
+        let path = Path::new(&path_s);
         let content = if let Some(env) = self.current_env() {
             render_env_file(&env.vars)
         } else {
             return;
         };
-        let result = fs::write(&path, content);
+        // backup antes de gravar se já existe
+        if path.exists() || path.is_symlink() {
+            let _ = backup_env_file(path);
+        }
+        let result = write_env_atomic_secure(path, &content);
         if let Some(env) = self.current_env_mut() {
             match result {
                 Ok(_) => {
                     env.dirty = false;
-                    env.last_action = format!("salvo em {path}");
+                    env.last_action = format!("salvo em {path_s}");
                 }
                 Err(e) => {
                     env.last_action = format!("erro ao salvar: {e}");
@@ -852,47 +932,32 @@ impl AppState {
                 }
                 return None;
             }
+            "down" => {
+                self.modal = Modal::ConfirmText {
+                    title: "Parar stack".into(),
+                    message: format!("Isso executará 'docker compose down' para {} (sem remover volumes). Digite '{}' para confirmar.", product.label(), product.label()),
+                    required: product.label().to_string(),
+                    input: String::new(),
+                    action: ConfirmAction::RunOps { product, action: action.to_string() },
+                };
+                return None;
+            }
             _ => {}
         }
 
-        if let Some(cmd_action) = orchestration::build_ops_action(&product, action) {
-            if let Some(ops) = self.ops_states.get_mut(&product) {
-                match action {
-                    "up" => {
-                        ops.state = StackState::Starting;
-                        ops.last_action = "subindo a stack (execução real em andamento)".into();
-                    }
-                    "down" => {
-                        ops.state = StackState::Stopping;
-                        ops.last_action = "parando a stack (execução real em andamento)".into();
-                    }
-                    "status" => {
-                        ops.last_action = "consultando estado real da stack".into();
-                    }
-                    "logs" => {
-                        ops.last_action = "consultando logs reais da stack".into();
-                    }
-                    "migrate" => {
-                        ops.last_action =
-                            "executando migração real (bench --site all migrate)".into();
-                    }
-                    _ => {}
-                }
-            }
-            return Some(cmd_action);
-        }
-        None
+        self.start_ops_action(&product, action)
     }
 
     fn run_selected_ops_action(&mut self) -> Option<Action> {
         let action = match self.ops_selected_action {
             0 => "up",
             1 => "down",
-            2 => "status",
-            3 => "preflight",
-            4 => "doctor",
-            5 => "onboarding",
-            6 => "migrate",
+            2 => "restart",
+            3 => "status",
+            4 => "preflight",
+            5 => "doctor",
+            6 => "onboarding",
+            7 => "migrate",
             _ => "logs",
         };
         self.run_ops_action(action)
@@ -2077,6 +2142,281 @@ impl AppState {
         None
     }
 
+    fn handle_reset_env_key(&mut self, key: KeyEvent) -> Option<Action> {
+        let mut close = false;
+        let mut execute: Option<(Product, ResetEnvMode)> = None;
+        if let Modal::ResetEnv(ref mut form) = self.modal {
+            match key.code {
+                KeyCode::Esc => close = true,
+                KeyCode::Up => {
+                    form.mode = match form.mode {
+                        ResetEnvMode::RestoreExample => ResetEnvMode::RestoreBackup,
+                        ResetEnvMode::RemoveEnv => ResetEnvMode::RestoreExample,
+                        ResetEnvMode::RestoreBackup => ResetEnvMode::RemoveEnv,
+                    };
+                }
+                KeyCode::Down => {
+                    form.mode = match form.mode {
+                        ResetEnvMode::RestoreExample => ResetEnvMode::RemoveEnv,
+                        ResetEnvMode::RemoveEnv => ResetEnvMode::RestoreBackup,
+                        ResetEnvMode::RestoreBackup => ResetEnvMode::RestoreExample,
+                    };
+                }
+                KeyCode::Backspace => {
+                    form.confirm_input.pop();
+                }
+                KeyCode::Enter => {
+                    if form.confirm_input.trim() == form.product.label()
+                        || form.confirm_input.trim() == format!("RESET {}", form.product.label())
+                    {
+                        execute = Some((form.product.clone(), form.mode.clone()));
+                        close = true;
+                    }
+                }
+                KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    form.confirm_input.push(c);
+                }
+                _ => {}
+            }
+        }
+        if close {
+            self.modal = Modal::None;
+        }
+        if let Some((product, mode)) = execute {
+            self.reset_env_for_product(&product, mode);
+        }
+        None
+    }
+
+    fn handle_confirm_text_key(&mut self, key: KeyEvent) -> Option<Action> {
+        let mut close = false;
+        let mut confirmed_action: Option<ConfirmAction> = None;
+        if let Modal::ConfirmText {
+            required,
+            input,
+            action,
+            ..
+        } = &mut self.modal
+        {
+            match key.code {
+                KeyCode::Esc => close = true,
+                KeyCode::Backspace => {
+                    input.pop();
+                }
+                KeyCode::Enter => {
+                    if input.trim() == required.trim() {
+                        confirmed_action = Some(action.clone());
+                        close = true;
+                    }
+                }
+                KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    input.push(c);
+                }
+                _ => {}
+            }
+        }
+        if close {
+            self.modal = Modal::None;
+        }
+        if let Some(action) = confirmed_action {
+            return self.apply_confirm_action(action);
+        }
+        None
+    }
+
+    fn apply_confirm_action(&mut self, action: ConfirmAction) -> Option<Action> {
+        match action {
+            ConfirmAction::OverwriteEnvFromExample(product) => {
+                self.generate_env_from_example_for(&product, true);
+                None
+            }
+            ConfirmAction::QuitApp => Some(Action::Quit),
+            ConfirmAction::SwitchProduct(product) => {
+                self.switch_to_product(product);
+                None
+            }
+            ConfirmAction::RunOps { product, action } => self.start_ops_action(&product, &action),
+        }
+    }
+
+    fn start_ops_action(&mut self, product: &Product, action: &str) -> Option<Action> {
+        if let Some(cmd_action) = orchestration::build_ops_action(product, action) {
+            if let Some(ops) = self.ops_states.get_mut(product) {
+                match action {
+                    "up" => {
+                        ops.state = StackState::Starting;
+                        ops.last_action = "subindo a stack (execução real em andamento)".into();
+                    }
+                    "down" => {
+                        ops.state = StackState::Stopping;
+                        ops.last_action = "parando a stack (execução real em andamento)".into();
+                    }
+                    "restart" => {
+                        ops.state = StackState::Starting;
+                        ops.last_action = "reiniciando a stack (execução real em andamento)".into();
+                    }
+                    "status" => {
+                        ops.last_action = "consultando estado real da stack".into();
+                    }
+                    "logs" => {
+                        ops.last_action = "consultando logs reais da stack".into();
+                    }
+                    "migrate" => {
+                        ops.last_action =
+                            "executando migração real (bench --site all migrate)".into();
+                    }
+                    _ => {}
+                }
+            }
+            return Some(cmd_action);
+        }
+        None
+    }
+
+    fn generate_env_from_example_for(&mut self, product: &Product, force: bool) {
+        let example = product_env_example_path(product);
+        let target = product_env_path(product);
+        let target_path = Path::new(&target);
+        if target_path.exists() && !force {
+            self.modal = Modal::ConfirmText {
+                title: "Sobrescrever .env".into(),
+                message: format!("O arquivo {target} já existe. Digite o nome do produto para sobrescrever a partir do .env.example."),
+                required: product.label().to_string(),
+                input: String::new(),
+                action: ConfirmAction::OverwriteEnvFromExample(product.clone()),
+            };
+            return;
+        }
+        match fs::read_to_string(&example) {
+            Ok(content) => {
+                if target_path.exists() {
+                    let _ = backup_env_file(target_path);
+                }
+                match write_env_atomic_secure(target_path, &content) {
+                    Ok(_) => {
+                        self.env_states
+                            .insert(product.clone(), load_env_state(product));
+                        if let Some(env) = self.env_states.get_mut(product) {
+                            env.last_action = format!("gerado/sobrescrito a partir de {example}");
+                        }
+                    }
+                    Err(e) => {
+                        if let Some(env) = self.env_states.get_mut(product) {
+                            env.last_action = format!("falha ao gerar .env: {e}");
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                if let Some(env) = self.env_states.get_mut(product) {
+                    env.last_action = format!("falha ao ler exemplo: {e}");
+                }
+            }
+        }
+        self.refresh_onboarding();
+        self.run_doctor_scan(false);
+    }
+
+    fn reset_env_for_product(&mut self, product: &Product, mode: ResetEnvMode) {
+        let env_path_s = product_env_path(product);
+        let env_path = Path::new(&env_path_s);
+        let example_path_s = product_env_example_path(product);
+        let example_path = Path::new(&example_path_s);
+        let result = match mode {
+            ResetEnvMode::RestoreExample => {
+                if !example_path.exists() {
+                    Err(".env.example não encontrado".to_string())
+                } else {
+                    if env_path.exists() {
+                        let _ = backup_env_file(env_path);
+                    }
+                    fs::read_to_string(example_path)
+                        .map_err(|e| e.to_string())
+                        .and_then(|c| write_env_atomic_secure(env_path, &c))
+                        .map(|_| "restaurado a partir do .env.example".to_string())
+                }
+            }
+            ResetEnvMode::RemoveEnv => {
+                if !env_path.exists() {
+                    Ok(".env já não existe".to_string())
+                } else {
+                    let _ = backup_env_file(env_path);
+                    fs::remove_file(env_path)
+                        .map_err(|e| e.to_string())
+                        .map(|_| "arquivo .env removido (backup criado)".to_string())
+                }
+            }
+            ResetEnvMode::RestoreBackup => {
+                if let Some(bak) = latest_env_backup(env_path) {
+                    if env_path.exists() {
+                        let _ = backup_env_file(env_path);
+                    }
+                    fs::copy(&bak, env_path)
+                        .map_err(|e| e.to_string())
+                        .map(|_| format!("restaurado de {}", bak.display()))
+                } else {
+                    Err("nenhum backup .env.bak.* encontrado".to_string())
+                }
+            }
+        };
+        self.env_states
+            .insert(product.clone(), load_env_state(product));
+        if let Some(env) = self.env_states.get_mut(product) {
+            env.last_action = match result {
+                Ok(m) => m,
+                Err(e) => format!("reset falhou: {e}"),
+            };
+            env.dirty = false;
+        }
+        self.refresh_onboarding();
+        self.run_doctor_scan(false);
+    }
+
+    pub fn reload_product_catalog(&mut self) {
+        let old = self.featured_product.clone();
+        let discovered = discover_products();
+        self.catalog_notice = if discovered.is_empty() {
+            Some(
+                "Nenhum produto encontrado em products/ (modo sem produto configurado)".to_string(),
+            )
+        } else {
+            None
+        };
+        self.products = if discovered.is_empty() {
+            vec![Product::new("default")]
+        } else {
+            discovered
+        };
+        if !self.products.iter().any(|p| p == &old) {
+            self.featured_product = self.products[0].clone();
+        }
+        for p in &self.products {
+            self.env_states
+                .entry(p.clone())
+                .or_insert_with(|| load_env_state(p));
+            self.ops_states
+                .entry(p.clone())
+                .or_insert_with(|| OpsStatus {
+                    product: p.clone(),
+                    state: StackState::Stopped,
+                    last_action: "produto carregado".into(),
+                    log_lines: vec![],
+                });
+        }
+        self.refresh_onboarding();
+        self.run_doctor_scan(false);
+    }
+
+    fn switch_to_product(&mut self, product: Product) {
+        self.featured_product = product;
+        self.clamp_env_selection();
+        self.preflight.clear();
+        self.preflight_ran = false;
+        self.refresh_onboarding();
+        self.run_doctor_scan(false);
+        self.apps_selected = 0;
+    }
+
     pub fn apps_for_featured(&self) -> Vec<(String, String)> {
         match self.load_apps_json() {
             Ok(arr) => apps_from_json_array(&arr),
@@ -2396,8 +2736,8 @@ pub fn render_env_file(vars: &[EnvVar]) -> String {
 }
 
 pub fn load_env_state(product: &Product) -> ProductEnv {
-    let env_path = product_env_path(&product);
-    let example_path = product_env_example_path(&product);
+    let env_path = product_env_path(product);
+    let example_path = product_env_example_path(product);
     let (path_hint, content, last_action, loaded_from_env) = if Path::new(&env_path).exists() {
         match fs::read_to_string(&env_path) {
             Ok(c) => (
@@ -2444,7 +2784,7 @@ pub fn load_env_state(product: &Product) -> ProductEnv {
     let mut findings = Vec::new();
     if !content.is_empty() {
         let ef = envfile::EnvFile::parse(&content);
-        let other_env = other_product(&product)
+        let other_env = other_product(product)
             .map(|other| product_env_path(&other))
             .and_then(|path| fs::read_to_string(path).ok())
             .map(|c| envfile::EnvFile::parse(&c));
@@ -2497,7 +2837,7 @@ pub fn load_env_state(product: &Product) -> ProductEnv {
 }
 
 pub fn env_has_tunnel_token(product: &Product) -> bool {
-    let env = load_env_state(&product);
+    let env = load_env_state(product);
     env.vars
         .iter()
         .find(|v| v.key == "TUNNEL_TOKEN")
@@ -2523,6 +2863,113 @@ fn apps_from_json_array(arr: &[serde_json::Value]) -> Vec<(String, String)> {
 }
 
 // (token editing is available through the .env lifecycle view)
+
+pub fn backup_env_file(path: &Path) -> Result<std::path::PathBuf, String> {
+    if !path.exists() && !path.is_symlink() {
+        return Err("arquivo inexistente".into());
+    }
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or(".env");
+    let bak = path.with_file_name(format!("{name}.bak.{ts}"));
+    fs::copy(path, &bak).map_err(|e| e.to_string())?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(&bak, fs::Permissions::from_mode(0o600));
+    }
+    Ok(bak)
+}
+
+pub fn latest_env_backup(path: &Path) -> Option<std::path::PathBuf> {
+    let parent = path.parent()?;
+    let name = path.file_name()?.to_string_lossy().to_string();
+    let prefix = format!("{name}.bak.");
+    let mut backups: Vec<_> = fs::read_dir(parent)
+        .ok()?
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .map(|n| n.starts_with(&prefix))
+                .unwrap_or(false)
+        })
+        .collect();
+    backups.sort();
+    backups.pop()
+}
+
+pub fn write_env_atomic_secure(path: &Path, content: &str) -> Result<(), String> {
+    // resolve symlink chain to final target (reuse logic similar to ops_core)
+    let mut target = path.to_path_buf();
+    for _ in 0..40 {
+        let meta = match fs::symlink_metadata(&target) {
+            Ok(m) => m,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => break,
+            Err(e) => return Err(e.to_string()),
+        };
+        if !meta.file_type().is_symlink() {
+            break;
+        }
+        let link = fs::read_link(&target).map_err(|e| e.to_string())?;
+        target = if link.is_absolute() {
+            link
+        } else {
+            target.parent().unwrap_or_else(|| Path::new(".")).join(link)
+        };
+    }
+
+    if let Some(parent) = target.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let name = target
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(".env");
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let tmp = target.with_file_name(format!(".{name}.tmp-{}-{ts}", std::process::id()));
+
+    #[cfg(unix)]
+    {
+        use std::io::Write;
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+        let mut file = fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .mode(0o600)
+            .open(&tmp)
+            .map_err(|e| e.to_string())?;
+        if let Err(e) = (|| -> Result<(), std::io::Error> {
+            file.write_all(content.as_bytes())?;
+            file.sync_all()?;
+            fs::set_permissions(&tmp, fs::Permissions::from_mode(0o600))?;
+            Ok(())
+        })() {
+            let _ = fs::remove_file(&tmp);
+            return Err(e.to_string());
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        fs::write(&tmp, content).map_err(|e| e.to_string())?;
+    }
+    fs::rename(&tmp, &target).map_err(|e| {
+        let _ = fs::remove_file(&tmp);
+        e.to_string()
+    })?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(&target, fs::Permissions::from_mode(0o600));
+    }
+    Ok(())
+}
 
 #[cfg(test)]
 mod doctor_tests {

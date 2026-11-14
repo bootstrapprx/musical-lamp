@@ -37,13 +37,21 @@ pub fn draw(f: &mut Frame, state: &AppState) {
         Modal::AddNode(form) => modals::draw_add_node(f, size, form),
         Modal::DropNode { confirm } => modals::draw_drop_node(f, size, state, *confirm),
         Modal::AddApp(form) => modals::draw_add_app(f, size, form),
+        Modal::ResetEnv(form) => modals::draw_reset_env(f, size, form),
+        Modal::ConfirmText {
+            title,
+            message,
+            required,
+            input,
+            ..
+        } => modals::draw_confirm_text(f, size, title, message, required, input),
         Modal::None => {}
     }
 }
 
 fn draw_header(f: &mut Frame, area: ratatui::layout::Rect, state: &AppState) {
     let cols = layout::header_cols(area);
-    let left = Paragraph::new(vec![
+    let mut left_lines = vec![
         Line::from(vec![
             Span::styled(
                 "musical-lamp-tui",
@@ -57,8 +65,14 @@ fn draw_header(f: &mut Frame, area: ratatui::layout::Rect, state: &AppState) {
             "Orquestrador SaaS • Docker Compose • FinOps",
             Style::default().fg(theme::OVERLAY),
         )),
-    ])
-    .block(
+    ];
+    if let Some(notice) = &state.catalog_notice {
+        left_lines.push(Line::from(Span::styled(
+            notice.clone(),
+            Style::default().fg(theme::YELLOW),
+        )));
+    }
+    let left = Paragraph::new(left_lines).block(
         Block::default()
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
@@ -182,6 +196,8 @@ fn draw_footer(f: &mut Frame, area: ratatui::layout::Rect, state: &AppState) {
                 "[Tab] Campo (URL/Ref) | [Enter] Adicionar | [Esc] Cancelar"
             }
         }
+        Modal::ResetEnv(_) => "[↑/↓] Modo | Digite confirmação | [Enter] Executar | [Esc] Cancelar",
+        Modal::ConfirmText { .. } => "Digite a confirmação | [Enter] Confirmar | [Esc] Cancelar",
         Modal::None => match state.view {
             View::ClusterFinOps => {
                 "[Tab] Switch Pane | [↑/↓] Navigate | [1-4] Detail Tab | [a] Add Node | [d] Drop Node | [s] Simulate Load | [q] Quit"
@@ -189,7 +205,7 @@ fn draw_footer(f: &mut Frame, area: ratatui::layout::Rect, state: &AppState) {
             View::ComposeStacks => match state.stack_panel {
                 StackPanel::Overview => "[Tab] Operações/Repositórios | [p] Produto | [1-3] Views | [q] Quit",
                 StackPanel::Operations => {
-                    "[↑/↓] Ação | [Enter] Executar | [u] Subir | [x] Parar | [c] Consultar | [f] Pre-flight | [k] Doctor | [K] Corrigir | [m] Migrar | [o] Logs | [Tab] Próximo painel | [q] Quit"
+                    "[↑/↓] Ação | [Enter] Executar | [u] Subir | [x] Parar | [t] Reiniciar | [c] Consultar | [f] Pre-flight | [k] Doctor | [K] Corrigir | [m] Migrar | [o] Logs | [Tab] Próximo painel | [q] Quit"
                 }
                 StackPanel::AppRepos => "[↑/↓] Selecionar | [a] Adicionar | [d] Remover | [Tab] Próximo painel | [q] Quit",
             },
@@ -198,7 +214,7 @@ fn draw_footer(f: &mut Frame, area: ratatui::layout::Rect, state: &AppState) {
                     if state.env_editing {
                         "[Enter] Salvar valor | [Esc] Cancelar"
                     } else {
-                        "[↑/↓] Variável | [Enter] Editar | [g] Gerar do exemplo | [w] Salvar .env | [Tab] Tunnel | [1-3] Views | [q] Quit"
+                        "[↑/↓] Variável | [Enter] Editar | [g] Gerar do exemplo | [w] Salvar .env | [R] Reset .env | [L] Recarregar produtos | [Tab] Tunnel | [1-3] Views | [q] Quit"
                     }
                 }
                 BridgePanel::Tunnel => "[Tab] Env | [1-3] Views | [q] Quit",
