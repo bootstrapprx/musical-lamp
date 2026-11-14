@@ -1,8 +1,32 @@
 //! .env reader/writer preserving order, comments and blank lines (adapted from kodoo-ops).
 #![allow(dead_code)]
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+fn resolve_symlink_chain(path: &Path) -> Result<PathBuf, String> {
+    let mut current = path.to_path_buf();
+    for _ in 0..40 {
+        let meta = match fs::symlink_metadata(&current) {
+            Ok(m) => m,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(current),
+            Err(e) => return Err(e.to_string()),
+        };
+        if !meta.file_type().is_symlink() {
+            return Ok(current);
+        }
+        let link = fs::read_link(&current).map_err(|e| e.to_string())?;
+        current = if link.is_absolute() {
+            link
+        } else {
+            current
+                .parent()
+                .unwrap_or_else(|| Path::new("."))
+                .join(link)
+        };
+    }
+    Err("cadeia de links simbólicos muito profunda ou em ciclo".into())
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Line {
@@ -185,18 +209,8 @@ impl EnvFile {
     }
 
     pub fn save(&self, path: &Path) -> Result<(), String> {
-        // Se for link simbólico, gravar no destino real para não quebrar o link.
-        let target = match fs::symlink_metadata(path) {
-            Ok(meta) if meta.file_type().is_symlink() => {
-                let link = fs::read_link(path).map_err(|e| e.to_string())?;
-                if link.is_absolute() {
-                    link
-                } else {
-                    path.parent().unwrap_or_else(|| Path::new(".")).join(link)
-                }
-            }
-            _ => path.to_path_buf(),
-        };
+        // Se for link simbólico (inclusive encadeado), gravar no destino final para não quebrar os links.
+        let target = resolve_symlink_chain(path)?;
 
         if let Some(dir) = target.parent() {
             fs::create_dir_all(dir).map_err(|e| e.to_string())?;

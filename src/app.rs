@@ -1149,25 +1149,38 @@ impl AppState {
             }
 
             #[cfg(unix)]
+            fn resolve_env_target(path: &Path) -> Result<std::path::PathBuf, String> {
+                let mut current = path.to_path_buf();
+                for _ in 0..40 {
+                    let meta = match fs::symlink_metadata(&current) {
+                        Ok(m) => m,
+                        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(current),
+                        Err(e) => return Err(e.to_string()),
+                    };
+                    if !meta.file_type().is_symlink() {
+                        return Ok(current);
+                    }
+                    let link = fs::read_link(&current).map_err(|e| e.to_string())?;
+                    current = if link.is_absolute() {
+                        link
+                    } else {
+                        current
+                            .parent()
+                            .unwrap_or_else(|| Path::new("."))
+                            .join(link)
+                    };
+                }
+                Err("cadeia de links simbólicos muito profunda ou em ciclo".into())
+            }
+
+            #[cfg(unix)]
             fn write_env_secure(path: &Path, content: &str) -> Result<(), String> {
                 use std::io::Write;
                 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
                 use std::time::{SystemTime, UNIX_EPOCH};
 
-                // Se .env for link simbólico, gravar no arquivo de destino real preservando o link.
-                let target = match fs::symlink_metadata(path) {
-                    Ok(meta) if meta.file_type().is_symlink() => {
-                        let link = fs::read_link(path).map_err(|e| e.to_string())?;
-                        if link.is_absolute() {
-                            link
-                        } else {
-                            path.parent().unwrap_or_else(|| Path::new(".")).join(link)
-                        }
-                    }
-                    Ok(_) => path.to_path_buf(),
-                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => path.to_path_buf(),
-                    Err(e) => return Err(e.to_string()),
-                };
+                // Se .env for link simbólico (inclusive encadeado), gravar no destino final preservando os links.
+                let target = resolve_env_target(path)?;
 
                 if let Some(parent) = target.parent() {
                     fs::create_dir_all(parent).map_err(|e| e.to_string())?;
@@ -1205,23 +1218,36 @@ impl AppState {
             }
 
             #[cfg(not(unix))]
+            fn resolve_env_target(path: &Path) -> Result<std::path::PathBuf, String> {
+                let mut current = path.to_path_buf();
+                for _ in 0..40 {
+                    let meta = match fs::symlink_metadata(&current) {
+                        Ok(m) => m,
+                        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(current),
+                        Err(e) => return Err(e.to_string()),
+                    };
+                    if !meta.file_type().is_symlink() {
+                        return Ok(current);
+                    }
+                    let link = fs::read_link(&current).map_err(|e| e.to_string())?;
+                    current = if link.is_absolute() {
+                        link
+                    } else {
+                        current
+                            .parent()
+                            .unwrap_or_else(|| Path::new("."))
+                            .join(link)
+                    };
+                }
+                Err("cadeia de links simbólicos muito profunda ou em ciclo".into())
+            }
+
+            #[cfg(not(unix))]
             fn write_env_secure(path: &Path, content: &str) -> Result<(), String> {
                 use std::time::{SystemTime, UNIX_EPOCH};
 
-                // Se .env for link simbólico, gravar no arquivo de destino real preservando o link.
-                let target = match fs::symlink_metadata(path) {
-                    Ok(meta) if meta.file_type().is_symlink() => {
-                        let link = fs::read_link(path).map_err(|e| e.to_string())?;
-                        if link.is_absolute() {
-                            link
-                        } else {
-                            path.parent().unwrap_or_else(|| Path::new(".")).join(link)
-                        }
-                    }
-                    Ok(_) => path.to_path_buf(),
-                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => path.to_path_buf(),
-                    Err(e) => return Err(e.to_string()),
-                };
+                // Se .env for link simbólico (inclusive encadeado), gravar no destino final preservando os links.
+                let target = resolve_env_target(path)?;
 
                 if let Some(parent) = target.parent() {
                     fs::create_dir_all(parent).map_err(|e| e.to_string())?;
@@ -2355,6 +2381,46 @@ mod doctor_tests {
         assert!(
             !state.doctor.failed.is_empty(),
             "falha de gravação deve ser reportada"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn chained_symlink_env_writes_to_final_target_and_preserves_links() {
+        use std::os::unix::fs::symlink;
+
+        let (_guard, dir) = enter_temp_workspace("doctor-chain");
+        let env_path = dir.join("products/accounting/.env");
+        let example_path = dir.join("products/accounting/.env.example");
+        let intermediate = dir.join("products/accounting/.env.link");
+        let real = dir.join("products/accounting/.env.real");
+        let original = "IMAGE_REF=ghcr.io/example/app:1.0.0\nDB_PASSWORD=\nTUNNEL_TOKEN=tok12345678901234567890\nEDGE_SUBNET=172.30.0.0/24\nEDGE_IP_RANGE=172.30.0.0/24\nCLOUDFLARED_IP=172.30.0.2\n";
+        fs::write(&real, original).unwrap();
+        fs::write(&example_path, original).unwrap();
+        symlink(&real, &intermediate).unwrap();
+        symlink(" .env.link".trim(), &env_path).unwrap(); // relative intermediate link
+
+        let telemetry: Box<dyn crate::telemetry::TelemetryProvider + Send> =
+            Box::new(crate::telemetry::MockTelemetryProvider::new());
+        let mut state = AppState::new(telemetry);
+        state.featured_product = Product::Accounting;
+        state.env_states.insert(Product::Accounting, load_env_state(Product::Accounting));
+        state.run_doctor_scan(true);
+
+        let env_meta = fs::symlink_metadata(&env_path).unwrap();
+        assert!(env_meta.file_type().is_symlink(), ".env deve permanecer como link simbólico");
+        let inter_meta = fs::symlink_metadata(&intermediate).unwrap();
+        assert!(inter_meta.file_type().is_symlink(), "link intermediário deve permanecer");
+        let final_content = fs::read_to_string(&real).unwrap();
+        assert!(final_content.contains("IMAGE_REF="), "arquivo final deve ser atualizado");
+        assert!(
+            !final_content.contains("DB_PASSWORD=\n"),
+            "correção automática deve preencher senha no destino final"
+        );
+        assert!(
+            state.doctor.failed.is_empty(),
+            "gravação em cadeia de links deve ter sucesso: {:?}",
+            state.doctor.failed
         );
     }
 
