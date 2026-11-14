@@ -185,112 +185,10 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(telemetry: Box<dyn TelemetryProvider + Send>) -> Self {
-        let nodes = vec![
-            Node {
-                id: "n1".into(),
-                name: "hetzner-hel1".into(),
-                region: "hel1".into(),
-                host: "10.0.0.11".into(),
-                ssh_user: "root".into(),
-                provider: "Hetzner".into(),
-                monthly_cost: 13.99,
-                online: true,
-                cpu_pct: 34.0,
-                ram_pct: 48.0,
-                cpu_history: vec![30, 32, 34],
-                ram_history: vec![45, 46, 48],
-            },
-            Node {
-                id: "n2".into(),
-                name: "aws-use1".into(),
-                region: "us-east-1".into(),
-                host: "10.0.0.21".into(),
-                ssh_user: "ubuntu".into(),
-                provider: "AWS".into(),
-                monthly_cost: 24.50,
-                online: true,
-                cpu_pct: 52.0,
-                ram_pct: 61.0,
-                cpu_history: vec![50, 51, 52],
-                ram_history: vec![58, 60, 61],
-            },
-            Node {
-                id: "n3".into(),
-                name: "do-nyc3".into(),
-                region: "nyc3".into(),
-                host: "10.0.0.31".into(),
-                ssh_user: "root".into(),
-                provider: "DigitalOcean".into(),
-                monthly_cost: 12.00,
-                online: false,
-                cpu_pct: 0.0,
-                ram_pct: 0.0,
-                cpu_history: vec![0, 0, 0],
-                ram_history: vec![0, 0, 0],
-            },
-        ];
-        let containers = vec![
-            Container {
-                id: "c1".into(),
-                name: "web-frontend".into(),
-                node_id: "n1".into(),
-                stack: "trivia".into(),
-                cpu_share_pct: 12.0,
-                ram_share_pct: 18.0,
-                status: "running".into(),
-                logs: vec!["[boot] frontend ready".into()],
-            },
-            Container {
-                id: "c2".into(),
-                name: "api-backend".into(),
-                node_id: "n1".into(),
-                stack: "trivia".into(),
-                cpu_share_pct: 14.0,
-                ram_share_pct: 20.0,
-                status: "running".into(),
-                logs: vec!["[boot] api listening".into()],
-            },
-            Container {
-                id: "c3".into(),
-                name: "worker-jobs".into(),
-                node_id: "n1".into(),
-                stack: "trivia".into(),
-                cpu_share_pct: 6.0,
-                ram_share_pct: 8.0,
-                status: "running".into(),
-                logs: vec!["[boot] worker started".into()],
-            },
-            Container {
-                id: "c4".into(),
-                name: "accounting-web".into(),
-                node_id: "n2".into(),
-                stack: "accounting".into(),
-                cpu_share_pct: 20.0,
-                ram_share_pct: 24.0,
-                status: "running".into(),
-                logs: vec!["[boot] accounting ui".into()],
-            },
-            Container {
-                id: "c5".into(),
-                name: "postgres".into(),
-                node_id: "n2".into(),
-                stack: "accounting".into(),
-                cpu_share_pct: 18.0,
-                ram_share_pct: 26.0,
-                status: "running".into(),
-                logs: vec!["[boot] db ready".into()],
-            },
-            Container {
-                id: "c6".into(),
-                name: "redis".into(),
-                node_id: "n2".into(),
-                stack: "accounting".into(),
-                cpu_share_pct: 8.0,
-                ram_share_pct: 10.0,
-                status: "running".into(),
-                logs: vec!["[boot] cache warm".into()],
-            },
-        ];
+        // Não inventar hosts/containers: o provider popula os dados a partir do
+        // Docker no primeiro tick. Antes da coleta a tela fica explicitamente vazia.
+        let nodes = Vec::new();
+        let containers = Vec::new();
         let mut env_states = HashMap::new();
         env_states.insert(Product::Accounting, load_env_state(Product::Accounting));
         env_states.insert(Product::Trivia, load_env_state(Product::Trivia));
@@ -2177,7 +2075,9 @@ impl AppState {
         let mut options: Vec<RefOption> = Vec::new();
         let mut seen = std::collections::HashSet::new();
 
-        let path = Path::new("products").join(product.label()).join("apps.json");
+        let path = Path::new("products")
+            .join(product.label())
+            .join("apps.json");
         let arr = match fs::read_to_string(&path) {
             Ok(text) => serde_json::from_str::<serde_json::Value>(&text)
                 .ok()
@@ -2207,7 +2107,9 @@ impl AppState {
             }
         }
 
-        let build_path = Path::new("products").join(product.label()).join("build.env");
+        let build_path = Path::new("products")
+            .join(product.label())
+            .join("build.env");
         if let Ok(content) = fs::read_to_string(build_path) {
             for line in content.lines() {
                 let t = line.trim();
