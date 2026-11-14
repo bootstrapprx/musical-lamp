@@ -1137,6 +1137,15 @@ impl AppState {
 
         // Apply fixes if requested
         if apply_fixes {
+            #[cfg(unix)]
+            fn restrict_env_permissions(path: &Path) -> Result<(), String> {
+                use std::os::unix::fs::PermissionsExt;
+                let meta = fs::metadata(path).map_err(|e| e.to_string())?;
+                let mut perms = meta.permissions();
+                perms.set_mode(0o600);
+                fs::set_permissions(path, perms).map_err(|e| e.to_string())
+            }
+
             let mut changed = false;
             // 1) create env from example
             if !env_exists
@@ -1155,6 +1164,15 @@ impl AppState {
                             report.applied.push(format!(
                                 "Criado products/{label}/.env a partir do .env.example"
                             ));
+                            #[cfg(unix)]
+                            match restrict_env_permissions(env_path) {
+                                Ok(_) => report
+                                    .applied
+                                    .push("Permissões do .env ajustadas para 600".into()),
+                                Err(e) => report
+                                    .applied
+                                    .push(format!("Falha ao ajustar permissões do .env: {e}")),
+                            }
                             changed = true;
                         }
                         Err(e) => report.applied.push(format!("Falha ao criar .env: {e}")),
@@ -1261,37 +1279,74 @@ impl AppState {
                             self.env_states.insert(product, load_env_state(product));
                         }
                         report.applied.push(format!("Salvo products/{label}/.env"));
+                        #[cfg(unix)]
+                        match restrict_env_permissions(target) {
+                            Ok(_) => report
+                                .applied
+                                .push("Permissões do .env ajustadas para 600".into()),
+                            Err(e) => report
+                                .applied
+                                .push(format!("Falha ao ajustar permissões do .env: {e}")),
+                        }
                     }
                     Err(e) => report.applied.push(format!("Falha ao salvar .env: {e}")),
                 }
-            }
-
-            // 4) fix permissions
-            #[cfg(unix)]
-            if env_path.exists()
+            } else if env_path.exists()
                 && report
                     .issues
                     .iter()
                     .any(|i| matches!(i.fix, Some(DoctorFixKind::FixEnvPermissions)))
             {
-                use std::os::unix::fs::PermissionsExt;
-                if let Ok(meta) = fs::metadata(env_path) {
-                    let mut perms = meta.permissions();
-                    perms.set_mode(0o600);
-                    match fs::set_permissions(env_path, perms) {
-                        Ok(_) => report
-                            .applied
-                            .push("Permissões do .env ajustadas para 600".into()),
-                        Err(e) => report
-                            .applied
-                            .push(format!("Falha ao ajustar permissões: {e}")),
-                    }
+                #[cfg(unix)]
+                match restrict_env_permissions(env_path) {
+                    Ok(_) => report
+                        .applied
+                        .push("Permissões do .env ajustadas para 600".into()),
+                    Err(e) => report
+                        .applied
+                        .push(format!("Falha ao ajustar permissões do .env: {e}")),
                 }
             }
 
-            // reload env state/findings after fixes
+            // reload env state/findings after fixes and rescan for up-to-date report
             self.env_states.insert(product, load_env_state(product));
             self.refresh_onboarding();
+
+            let applied = report.applied.clone();
+            self.run_doctor_scan(false);
+            self.doctor.applied = applied;
+            let errs = self
+                .doctor
+                .issues
+                .iter()
+                .filter(|i| matches!(i.severity, PreflightStatus::Error))
+                .count();
+            let warns = self
+                .doctor
+                .issues
+                .iter()
+                .filter(|i| matches!(i.severity, PreflightStatus::Warn))
+                .count();
+            self.doctor.summary = if self.doctor.applied.is_empty() {
+                format!(
+                    "Doctor: nenhuma correção automática aplicada ({errs} erro(s), {warns} aviso(s))."
+                )
+            } else {
+                format!(
+                    "Doctor: {} correção(ões) aplicada(s). Estado atual: {errs} erro(s), {warns} aviso(s).",
+                    self.doctor.applied.len()
+                )
+            };
+            if let Some(ops) = self.ops_states.get_mut(&product) {
+                ops.last_action = self.doctor.summary.clone();
+                for a in &self.doctor.applied {
+                    ops.log_lines.push(format!("[doctor] {a}"));
+                }
+            }
+            if self.doctor_selected >= self.doctor.issues.len() && !self.doctor.issues.is_empty() {
+                self.doctor_selected = self.doctor.issues.len() - 1;
+            }
+            return;
         }
 
         let errs = report

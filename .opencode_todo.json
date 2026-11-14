@@ -1,32 +1,6 @@
 [
-  {
-    "id": "explore",
-    "content": "Entender a interface atual e o que já funciona",
-    "status": "completed",
-    "activeForm": "Revisando a interface atual"
-  },
-  {
-    "id": "doctor",
-    "content": "Criar o diagnóstico (doctor) que encontra problemas e oferece correções",
-    "status": "completed",
-    "activeForm": "Criando o diagnóstico com correções"
-  },
-  {
-    "id": "ui",
-    "content": "Ajustar a tela para mostrar o diagnóstico e as ações de correção",
-    "status": "completed",
-    "activeForm": "Ajustando a tela do diagnóstico"
-  },
-  {
-    "id": "build",
-    "content": "Conferir se o projeto compila sem erros ou avisos",
-    "status": "completed",
-    "activeForm": "Conferindo a compilação"
-  },
-  {
-    "id": "summary",
-    "content": "Explicar o que foi feito e o que ainda falta",
-    "status": "completed",
-    "activeForm": "Preparando o resumo final"
-  }
+  {"id":"1","content":"Entender o diagnóstico do Doctor e o código atual","status":"completed","priority":"high"},
+  {"id":"2","content":"Corrigir permissões do .env ao criar ou salvar com segredos","status":"completed","priority":"high"},
+  {"id":"3","content":"Atualizar o relatório do Doctor após aplicar correções","status":"completed","priority":"medium"},
+  {"id":"4","content":"Verificar compilação e avisos do projeto","status":"completed","priority":"high"}
 ]

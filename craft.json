@@ -9,7 +9,7 @@
   "status": "ready",
   "note": "Ready: all 2 checks pass.",
   "created_ms": 1794595666281,
-  "updated_ms": 1794679958214,
+  "updated_ms": 1794680480491,
   "checks": [
     {
       "round": 1,
@@ -208,13 +208,31 @@
       "note": "`cargo test --quiet` passed.",
       "artifacts": [],
       "at_ms": 1794679958209
+    },
+    {
+      "round": 12,
+      "check": "build",
+      "passed": true,
+      "similarity": null,
+      "note": "`cargo build --quiet` passed.",
+      "artifacts": [],
+      "at_ms": 1794680480172
+    },
+    {
+      "round": 12,
+      "check": "own-tests",
+      "passed": true,
+      "similarity": null,
+      "note": "`cargo test --quiet` passed.",
+      "artifacts": [],
+      "at_ms": 1794680480482
     }
   ],
   "agent_session": null,
   "agent_session_by": "opencode",
   "capture_deep": true,
   "allowed_actions": [],
-  "last_reply": "Adicionei um “Doctor” na área de operações que analisa a configuração e aponta problemas impeditivos, diferenças em relação ao modelo e avisos ou erros, além de oferecer correções automáticas para os casos mais comuns (como criar ou completar configurações faltantes e ajustar permissões). A tela de operações agora mostra esse diagnóstico junto das checagens, mantendo as funções que já existiam para gerenciar servidores, aplicações e configurações.\n\nNão consegui ver a imagem anexada, então usei apenas a descrição do pedido; e correções que dependem de dados externos (como tokens reais de serviços ou referências exatas de imagens) continuam precisando ser informadas por você. O projeto compila sem erros nem avisos. Se quiser, posso ampliar o Doctor para aplicar mais tipos de correção automática com regras que você definir.",
+  "last_reply": "Ajustei o reparo automático do Doctor para que, sempre que criar ou salvar o arquivo de configuração com segredos, ele passe a aplicar permissões restritas e informe claramente se não conseguir fazer isso. Também fiz o Doctor reanalisar o ambiente logo após aplicar as correções, para a tela mostrar o estado atualizado em vez de manter problemas já resolvidos.\n\nA verificação do projeto concluiu sem erros nem avisos aparentes nas checagens realizadas. Não executei uma simulação completa em um ambiente com produtos, credenciais e permissões reais variadas, então ainda vale confirmar na prática os casos de criação do arquivo e de falha de permissão. Se quiser, posso em seguida revisar outras partes do painel do Doctor para deixar as mensagens ainda mais claras para quem opera a ferramenta.",
   "asset_budget_usd": 5.0,
   "generate_assets": false,
   "app_in_root": true,
