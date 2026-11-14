@@ -9,7 +9,7 @@
   "status": "ready",
   "note": "Ready: all 2 checks pass.",
   "created_ms": 1794595666281,
-  "updated_ms": 1794679286351,
+  "updated_ms": 1794679958214,
   "checks": [
     {
       "round": 1,
@@ -190,13 +190,31 @@
       "note": "`cargo test --quiet` passed.",
       "artifacts": [],
       "at_ms": 1794679286342
+    },
+    {
+      "round": 11,
+      "check": "build",
+      "passed": true,
+      "similarity": null,
+      "note": "`cargo build --quiet` passed.",
+      "artifacts": [],
+      "at_ms": 1794679957296
+    },
+    {
+      "round": 11,
+      "check": "own-tests",
+      "passed": true,
+      "similarity": null,
+      "note": "`cargo test --quiet` passed.",
+      "artifacts": [],
+      "at_ms": 1794679958209
     }
   ],
   "agent_session": null,
   "agent_session_by": "opencode",
   "capture_deep": true,
   "allowed_actions": [],
-  "last_reply": "A interface do terminal foi renovada para mostrar o grupo de servidores e os custos lado a lado, com navegação principal, painéis de nós e serviços, detalhes de uso e dinheiro (incluindo histórico, projeções e abas de registros, custos, composição e previsão) e janelas para adicionar ou remover servidores com impacto no orçamento. As operações e configurações que já existiam foram mantidas e ajustadas para conviver com essa nova visão.\n\nO túnel agora usa a imagem mais recente do Cloudflare no formato indicado, recebendo o token diretamente na execução, e as mensagens e validações relacionadas foram atualizadas para refletir isso. A compilação e as verificações do próprio programa concluíram sem problemas.\n\nUm próximo passo útil é abrir a interface no terminal para conferir visualmente os fluxos e, se quiser, ajustar os servidores de exemplo ou o valor do orçamento inicial.",
+  "last_reply": "Adicionei um “Doctor” na área de operações que analisa a configuração e aponta problemas impeditivos, diferenças em relação ao modelo e avisos ou erros, além de oferecer correções automáticas para os casos mais comuns (como criar ou completar configurações faltantes e ajustar permissões). A tela de operações agora mostra esse diagnóstico junto das checagens, mantendo as funções que já existiam para gerenciar servidores, aplicações e configurações.\n\nNão consegui ver a imagem anexada, então usei apenas a descrição do pedido; e correções que dependem de dados externos (como tokens reais de serviços ou referências exatas de imagens) continuam precisando ser informadas por você. O projeto compila sem erros nem avisos. Se quiser, posso ampliar o Doctor para aplicar mais tipos de correção automática com regras que você definir.",
   "asset_budget_usd": 5.0,
   "generate_assets": false,
   "app_in_root": true,

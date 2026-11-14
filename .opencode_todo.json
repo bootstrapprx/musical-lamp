@@ -1,27 +1,32 @@
 [
   {
-    "content": "Estudar o projeto atual e o que já funciona",
+    "id": "explore",
+    "content": "Entender a interface atual e o que já funciona",
     "status": "completed",
-    "activeForm": "Estudando o projeto atual"
+    "activeForm": "Revisando a interface atual"
   },
   {
-    "content": "Ajustar a configuração do túnel para usar a imagem mais recente do Cloudflare",
+    "id": "doctor",
+    "content": "Criar o diagnóstico (doctor) que encontra problemas e oferece correções",
     "status": "completed",
-    "activeForm": "Ajustando a configuração do túnel"
+    "activeForm": "Criando o diagnóstico com correções"
   },
   {
-    "content": "Reorganizar a tela principal com a visão do grupo de servidores e dos custos",
+    "id": "ui",
+    "content": "Ajustar a tela para mostrar o diagnóstico e as ações de correção",
     "status": "completed",
-    "activeForm": "Reorganizando a tela principal"
+    "activeForm": "Ajustando a tela do diagnóstico"
   },
   {
-    "content": "Completar os painéis, abas e janelas para adicionar ou remover servidores",
+    "id": "build",
+    "content": "Conferir se o projeto compila sem erros ou avisos",
     "status": "completed",
-    "activeForm": "Completando painéis e janelas"
+    "activeForm": "Conferindo a compilação"
   },
   {
-    "content": "Testar o programa e corrigir os problemas encontrados",
+    "id": "summary",
+    "content": "Explicar o que foi feito e o que ainda falta",
     "status": "completed",
-    "activeForm": "Testando e corrigindo problemas"
+    "activeForm": "Preparando o resumo final"
   }
 ]

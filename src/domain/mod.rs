@@ -118,6 +118,31 @@ pub struct PreflightCheck {
     pub detail: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DoctorFixKind {
+    CreateEnvFromExample,
+    AddMissingEnvKeys,
+    FillSecret,
+    FixEnvPermissions,
+    SaveEnvNormalized,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DoctorIssue {
+    pub severity: PreflightStatus,
+    pub title: String,
+    pub detail: String,
+    pub fix: Option<DoctorFixKind>,
+    pub key: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct DoctorReport {
+    pub issues: Vec<DoctorIssue>,
+    pub applied: Vec<String>,
+    pub summary: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OnboardingStep {
     pub title: String,

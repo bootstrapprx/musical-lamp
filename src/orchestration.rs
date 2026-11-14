@@ -137,4 +137,3 @@ pub fn spawn_ops_command(tx: mpsc::UnboundedSender<Event>, req: Action) {
         }
     });
 }
-

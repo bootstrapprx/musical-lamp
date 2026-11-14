@@ -77,7 +77,10 @@ pub fn draw_finops(f: &mut Frame, area: Rect, state: &AppState, focused: bool) {
     };
     let lines = vec![
         Line::from(vec![
-            Span::styled("Custo Atual Estimado: ", Style::default().fg(theme::SUBTEXT)),
+            Span::styled(
+                "Custo Atual Estimado: ",
+                Style::default().fg(theme::SUBTEXT),
+            ),
             Span::styled(
                 format!("${:.2}/mo", allocated),
                 Style::default()

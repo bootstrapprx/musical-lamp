@@ -4,3 +4,9 @@
 {"caller":"mcp","duration_ms":4216,"kind":"tool_call","ok":true,"params":{},"time":"2026-11-14T18:00:44Z","tool":"rebuild_check","ts":1794679244}
 {"caller":"mcp","duration_ms":12,"kind":"tool_call","ok":true,"params":{"text":"Refatorada a interface de terminal para visão de servidores e custos (Cluster & FinOps) com navegação, painéis, abas de detalhes e janelas para adicionar/remover servidores, preservando operações e configurações existentes. Túnel Cloudflare ajustado para cloudflare/cloudflared:latest com execução via token; validação e dicas atualizadas. cargo check, cargo clippy e testes passaram."},"time":"2026-11-14T18:01:14Z","tool":"core_handoff_write","ts":1794679274}
 {"caller":"ui","duration_ms":0,"kind":"tool_call","ok":true,"params":{},"time":"2026-11-14T18:01:26Z","tool":"project_pins_list","ts":1794679286}
+{"caller":"ui","duration_ms":0,"kind":"tool_call","ok":true,"params":{},"time":"2026-11-14T18:07:22Z","tool":"project_pins_list","ts":1794679642}
+{"caller":"ui","duration_ms":0,"kind":"tool_call","ok":true,"params":{},"time":"2026-11-14T18:07:41Z","tool":"project_pins_list","ts":1794679661}
+{"caller":"ui","duration_ms":7,"kind":"tool_call","ok":true,"params":{},"time":"2026-11-14T18:08:05Z","tool":"project_pins_list","ts":1794679685}
+{"caller":"mcp","duration_ms":0,"kind":"tool_call","ok":true,"params":{},"time":"2026-11-14T18:08:29Z","tool":"core_unknowns_show","ts":1794679709}
+{"caller":"mcp","duration_ms":0,"kind":"tool_call","ok":true,"params":{},"time":"2026-11-14T18:08:29Z","tool":"core_session_show","ts":1794679709}
+{"caller":"ui","duration_ms":0,"kind":"tool_call","ok":true,"params":{},"time":"2026-11-14T18:12:38Z","tool":"project_pins_list","ts":1794679958}

@@ -13,15 +13,17 @@ use crate::ui::widgets::{containers, env as envw, finops, modals, nodes, stacks}
 pub fn draw(f: &mut Frame, state: &AppState) {
     let size = f.area();
     if size.width < 50 || size.height < 18 {
-        let msg = Paragraph::new("Terminal muito pequeno. Aumente a janela (mínimo 50x18) para usar a TUI.")
-            .style(Style::default().fg(theme::YELLOW))
-            .wrap(Wrap { trim: true })
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .border_type(BorderType::Rounded)
-                    .title("TUI"),
-            );
+        let msg = Paragraph::new(
+            "Terminal muito pequeno. Aumente a janela (mínimo 50x18) para usar a TUI.",
+        )
+        .style(Style::default().fg(theme::YELLOW))
+        .wrap(Wrap { trim: true })
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .title("TUI"),
+        );
         f.render_widget(msg, size);
         return;
     }
@@ -143,7 +145,11 @@ fn draw_bridges(f: &mut Frame, area: ratatui::layout::Rect, state: &AppState) {
         BridgePanel::Tunnel => {
             let has_token = crate::app::env_has_tunnel_token(state.featured_product);
             let token_status = if has_token { "configurado" } else { "ausente" };
-            let token_color = if has_token { theme::GREEN } else { theme::YELLOW };
+            let token_color = if has_token {
+                theme::GREEN
+            } else {
+                theme::YELLOW
+            };
             let lines = vec![
                 Line::from(Span::styled("Bridges & Plugins", Style::default().fg(theme::MAUVE).add_modifier(Modifier::BOLD))),
                 Line::from(""),
@@ -177,7 +183,7 @@ fn draw_footer(f: &mut Frame, area: ratatui::layout::Rect, state: &AppState) {
             View::ComposeStacks => match state.stack_panel {
                 StackPanel::Overview => "[Tab] Operações/Repositórios | [p] Produto | [1-3] Views | [q] Quit",
                 StackPanel::Operations => {
-                    "[↑/↓] Ação | [Enter] Executar | [u] Subir | [x] Parar | [c] Consultar | [f] Pre-flight | [m] Migrar | [o] Logs | [Tab] Próximo painel | [q] Quit"
+                    "[↑/↓] Ação | [Enter] Executar | [u] Subir | [x] Parar | [c] Consultar | [f] Pre-flight | [k] Doctor | [K] Corrigir | [m] Migrar | [o] Logs | [Tab] Próximo painel | [q] Quit"
                 }
                 StackPanel::AppRepos => "[↑/↓] Selecionar | [a] Adicionar | [d] Remover | [Tab] Próximo painel | [q] Quit",
             },
@@ -193,11 +199,13 @@ fn draw_footer(f: &mut Frame, area: ratatui::layout::Rect, state: &AppState) {
             },
         },
     };
-    let p = Paragraph::new(text).style(Style::default().fg(theme::SUBTEXT)).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
-            .title("Atalhos"),
-    );
+    let p = Paragraph::new(text)
+        .style(Style::default().fg(theme::SUBTEXT))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .title("Atalhos"),
+        );
     f.render_widget(p, area);
 }
