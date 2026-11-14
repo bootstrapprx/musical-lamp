@@ -1153,10 +1153,26 @@ impl AppState {
                 use std::io::Write;
                 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
                 use std::time::{SystemTime, UNIX_EPOCH};
-                if let Some(parent) = path.parent() {
+
+                // Se .env for link simbólico, gravar no arquivo de destino real preservando o link.
+                let target = match fs::symlink_metadata(path) {
+                    Ok(meta) if meta.file_type().is_symlink() => {
+                        let link = fs::read_link(path).map_err(|e| e.to_string())?;
+                        if link.is_absolute() {
+                            link
+                        } else {
+                            path.parent().unwrap_or_else(|| Path::new(".")).join(link)
+                        }
+                    }
+                    Ok(_) => path.to_path_buf(),
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => path.to_path_buf(),
+                    Err(e) => return Err(e.to_string()),
+                };
+
+                if let Some(parent) = target.parent() {
                     fs::create_dir_all(parent).map_err(|e| e.to_string())?;
                 }
-                let name = path
+                let name = target
                     .file_name()
                     .and_then(|n| n.to_str())
                     .unwrap_or(".env");
@@ -1164,7 +1180,7 @@ impl AppState {
                     .duration_since(UNIX_EPOCH)
                     .map(|d| d.as_nanos())
                     .unwrap_or(0);
-                let tmp = path.with_file_name(format!(".{name}.tmp-{}-{ts}", std::process::id()));
+                let tmp = target.with_file_name(format!(".{name}.tmp-{}-{ts}", std::process::id()));
                 let mut file = fs::OpenOptions::new()
                     .create_new(true)
                     .write(true)
@@ -1180,21 +1196,37 @@ impl AppState {
                     let _ = fs::remove_file(&tmp);
                     return Err(e.to_string());
                 }
-                if let Err(e) = fs::rename(&tmp, path) {
+                if let Err(e) = fs::rename(&tmp, &target) {
                     let _ = fs::remove_file(&tmp);
                     return Err(e.to_string());
                 }
                 // Garantir explicitamente permissões restritas no destino final.
-                restrict_env_permissions(path)
+                restrict_env_permissions(&target)
             }
 
             #[cfg(not(unix))]
             fn write_env_secure(path: &Path, content: &str) -> Result<(), String> {
                 use std::time::{SystemTime, UNIX_EPOCH};
-                if let Some(parent) = path.parent() {
+
+                // Se .env for link simbólico, gravar no arquivo de destino real preservando o link.
+                let target = match fs::symlink_metadata(path) {
+                    Ok(meta) if meta.file_type().is_symlink() => {
+                        let link = fs::read_link(path).map_err(|e| e.to_string())?;
+                        if link.is_absolute() {
+                            link
+                        } else {
+                            path.parent().unwrap_or_else(|| Path::new(".")).join(link)
+                        }
+                    }
+                    Ok(_) => path.to_path_buf(),
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => path.to_path_buf(),
+                    Err(e) => return Err(e.to_string()),
+                };
+
+                if let Some(parent) = target.parent() {
                     fs::create_dir_all(parent).map_err(|e| e.to_string())?;
                 }
-                let name = path
+                let name = target
                     .file_name()
                     .and_then(|n| n.to_str())
                     .unwrap_or(".env");
@@ -1202,9 +1234,9 @@ impl AppState {
                     .duration_since(UNIX_EPOCH)
                     .map(|d| d.as_nanos())
                     .unwrap_or(0);
-                let tmp = path.with_file_name(format!(".{name}.tmp-{}-{ts}", std::process::id()));
+                let tmp = target.with_file_name(format!(".{name}.tmp-{}-{ts}", std::process::id()));
                 fs::write(&tmp, content).map_err(|e| e.to_string())?;
-                fs::rename(&tmp, path).map_err(|e| {
+                fs::rename(&tmp, &target).map_err(|e| {
                     let _ = fs::remove_file(&tmp);
                     e.to_string()
                 })
@@ -2283,24 +2315,31 @@ mod doctor_tests {
         state.env_states.insert(Product::Accounting, load_env_state(Product::Accounting));
         state.run_doctor_scan(false);
 
-        // force write failure by making the product directory read-only (cannot create temp file)
+        // force write failure without relying on permissions root may bypass:
+        // replace .env by a symlink to a directory so atomic rename of the temp file fails.
+        let target_dir = dir.join("products/accounting/env-target-dir");
+        fs::create_dir_all(&target_dir).unwrap();
+        fs::remove_file(&env_path).unwrap();
         #[cfg(unix)]
+        std::os::unix::fs::symlink(&target_dir, &env_path).unwrap();
+        #[cfg(not(unix))]
         {
-            use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(dir.join("products/accounting"), fs::Permissions::from_mode(0o500)).unwrap();
+            // fallback: make destination a directory to force rename failure
+            fs::create_dir_all(&env_path).unwrap();
         }
 
         state.run_doctor_scan(true);
 
-        // restore permissions to inspect
         #[cfg(unix)]
         {
-            use std::os::unix::fs::PermissionsExt;
-            let _ = fs::set_permissions(dir.join("products/accounting"), fs::Permissions::from_mode(0o700));
+            let meta = fs::symlink_metadata(&env_path).unwrap();
+            assert!(meta.file_type().is_symlink(), "falha de gravação não deve substituir link simbólico");
+            assert!(target_dir.is_dir(), "destino do link deve permanecer intacto");
         }
-
-        let after = fs::read_to_string(&env_path).unwrap();
-        assert_eq!(after, original, "falha de gravação não deve corromper ou alterar o .env original");
+        #[cfg(not(unix))]
+        {
+            assert!(env_path.is_dir(), "falha de gravação não deve corromper o destino existente");
+        }
 
         let has_fill_applied = state
             .doctor
@@ -2322,44 +2361,43 @@ mod doctor_tests {
     #[test]
     fn unreadable_existing_env_is_preserved_and_not_marked_applied() {
         // Se o .env existente não pode ser lido, o Doctor não deve gravar por cima nem marcar correções como aplicadas.
-        #[cfg(unix)]
-        {
-            let (_guard, dir) = enter_temp_workspace("doctor-unreadable");
-            let env_path = dir.join("products/accounting/.env");
-            let example_path = dir.join("products/accounting/.env.example");
-            let original = "IMAGE_REF=\nDB_PASSWORD=\nTUNNEL_TOKEN=tok12345678901234567890\nEDGE_SUBNET=172.30.0.0/24\nEDGE_IP_RANGE=172.30.0.0/24\nCLOUDFLARED_IP=172.30.0.2\n";
-            fs::write(&env_path, original).unwrap();
-            fs::write(&example_path, original).unwrap();
-            use std::os::unix::fs::PermissionsExt;
-            // tornar ilegível
-            fs::set_permissions(&env_path, fs::Permissions::from_mode(0o000)).unwrap();
+        let (_guard, dir) = enter_temp_workspace("doctor-unreadable");
+        let env_path = dir.join("products/accounting/.env");
+        let example_path = dir.join("products/accounting/.env.example");
+        let original = "IMAGE_REF=\nDB_PASSWORD=\nTUNNEL_TOKEN=tok12345678901234567890\nEDGE_SUBNET=172.30.0.0/24\nEDGE_IP_RANGE=172.30.0.0/24\nCLOUDFLARED_IP=172.30.0.2\n";
+        fs::write(&env_path, original).unwrap();
+        fs::write(&example_path, original).unwrap();
 
-            let telemetry: Box<dyn crate::telemetry::TelemetryProvider + Send> =
-                Box::new(crate::telemetry::MockTelemetryProvider::new());
-            let mut state = AppState::new(telemetry);
-            state.featured_product = Product::Accounting;
-            state.env_states.insert(Product::Accounting, load_env_state(Product::Accounting));
-            state.run_doctor_scan(true);
+        // tornar ilegível sem depender de permissões que root pode contornar:
+        // substituir o arquivo por um diretório (read_to_string falha com EISDIR).
+        fs::remove_file(&env_path).unwrap();
+        fs::create_dir(&env_path).unwrap();
 
-            // restaurar para leitura/verificação
-            let _ = fs::set_permissions(&env_path, fs::Permissions::from_mode(0o600));
-            let after = fs::read_to_string(&env_path).unwrap();
-            assert_eq!(after, original, ".env existente ilegível deve ser preservado sem gravação");
-            let has_saved = state
-                .doctor
-                .applied
-                .iter()
-                .any(|m| m.contains("Salvo products/accounting/.env") || m.contains("Preenchidos"));
-            assert!(
-                !has_saved,
-                "não deve marcar como aplicado quando não foi possível ler/gravar: {:?}",
-                state.doctor.applied
-            );
-            assert!(
-                state.doctor.failed.iter().any(|m| m.contains("ler .env existente") || m.contains("Falha")),
-                "deve reportar falha ao ler .env existente: {:?}",
-                state.doctor.failed
-            );
-        }
+        let telemetry: Box<dyn crate::telemetry::TelemetryProvider + Send> =
+            Box::new(crate::telemetry::MockTelemetryProvider::new());
+        let mut state = AppState::new(telemetry);
+        state.featured_product = Product::Accounting;
+        state.env_states.insert(Product::Accounting, load_env_state(Product::Accounting));
+        state.run_doctor_scan(true);
+
+        assert!(
+            env_path.is_dir(),
+            ".env existente não legível como arquivo deve ser preservado sem ser substituído"
+        );
+        let has_saved = state
+            .doctor
+            .applied
+            .iter()
+            .any(|m| m.contains("Salvo products/accounting/.env") || m.contains("Preenchidos"));
+        assert!(
+            !has_saved,
+            "não deve marcar como aplicado quando não foi possível ler/gravar: {:?}",
+            state.doctor.applied
+        );
+        assert!(
+            state.doctor.failed.iter().any(|m| m.contains("ler .env existente") || m.contains("Falha")),
+            "deve reportar falha ao ler .env existente: {:?}",
+            state.doctor.failed
+        );
     }
 }

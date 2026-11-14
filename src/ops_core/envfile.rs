@@ -185,16 +185,29 @@ impl EnvFile {
     }
 
     pub fn save(&self, path: &Path) -> Result<(), String> {
-        if let Some(dir) = path.parent() {
+        // Se for link simbólico, gravar no destino real para não quebrar o link.
+        let target = match fs::symlink_metadata(path) {
+            Ok(meta) if meta.file_type().is_symlink() => {
+                let link = fs::read_link(path).map_err(|e| e.to_string())?;
+                if link.is_absolute() {
+                    link
+                } else {
+                    path.parent().unwrap_or_else(|| Path::new(".")).join(link)
+                }
+            }
+            _ => path.to_path_buf(),
+        };
+
+        if let Some(dir) = target.parent() {
             fs::create_dir_all(dir).map_err(|e| e.to_string())?;
         }
-        if path.exists() {
-            let _ = backup(path);
+        if target.exists() {
+            let _ = backup(&target);
         }
-        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or(".env");
-        let tmp = path.with_file_name(format!("{name}.kodoo-tmp"));
+        let name = target.file_name().and_then(|n| n.to_str()).unwrap_or(".env");
+        let tmp = target.with_file_name(format!("{name}.kodoo-tmp"));
         write_private(&tmp, self.to_text().as_bytes()).map_err(|e| e.to_string())?;
-        fs::rename(&tmp, path).map_err(|e| e.to_string())?;
+        fs::rename(&tmp, &target).map_err(|e| e.to_string())?;
         Ok(())
     }
 }

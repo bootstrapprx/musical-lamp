@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "work_ms": 4372698,
-  "input_tokens": 12930315,
-  "output_tokens": 212901,
+  "work_ms": 4546696,
+  "input_tokens": 13106044,
+  "output_tokens": 222041,
   "cost_usd": 0.0,
   "api_billed_usd": 0.0,
   "priced": true
