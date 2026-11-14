@@ -69,3 +69,15 @@
 {"caller":"ui","duration_ms":0,"kind":"tool_call","ok":true,"params":{},"time":"2026-11-14T21:27:24Z","tool":"project_pins_list","ts":1794691644}
 {"caller":"ui","duration_ms":0,"kind":"tool_call","ok":true,"params":{},"time":"2026-11-14T21:27:43Z","tool":"project_pins_list","ts":1794691663}
 {"caller":"ui","duration_ms":0,"kind":"tool_call","ok":true,"params":{},"time":"2026-11-14T21:27:44Z","tool":"project_pins_list","ts":1794691664}
+{"caller":"ui","duration_ms":0,"kind":"tool_call","ok":true,"params":{},"time":"2026-11-14T21:53:57Z","tool":"project_pins_list","ts":1794693237}
+{"caller":"ui","duration_ms":0,"kind":"tool_call","ok":true,"params":{},"time":"2026-11-14T21:55:06Z","tool":"project_pins_list","ts":1794693306}
+{"caller":"ui","duration_ms":3,"kind":"tool_call","ok":true,"params":{},"time":"2026-11-14T21:55:23Z","tool":"project_pins_list","ts":1794693323}
+{"caller":"ui","duration_ms":0,"kind":"tool_call","ok":true,"params":{},"time":"2026-11-14T21:55:34Z","tool":"project_pins_list","ts":1794693334}
+{"caller":"ui","duration_ms":0,"kind":"tool_call","ok":true,"params":{},"time":"2026-11-14T21:59:02Z","tool":"project_pins_list","ts":1794693542}
+{"caller":"ui","duration_ms":0,"kind":"tool_call","ok":true,"params":{},"time":"2026-11-14T22:01:01Z","tool":"project_pins_list","ts":1794693661}
+{"caller":"ui","duration_ms":0,"kind":"tool_call","ok":true,"params":{},"time":"2026-11-14T22:07:32Z","tool":"project_pins_list","ts":1794694052}
+{"caller":"ui","duration_ms":1,"kind":"tool_call","ok":true,"params":{},"time":"2026-11-14T22:07:32Z","tool":"project_pins_list","ts":1794694052}
+{"caller":"ui","duration_ms":0,"kind":"tool_call","ok":true,"params":{},"time":"2026-11-14T22:07:39Z","tool":"project_pins_list","ts":1794694059}
+{"caller":"ui","duration_ms":0,"kind":"tool_call","ok":true,"params":{},"time":"2026-11-14T22:13:29Z","tool":"project_pins_list","ts":1794694409}
+{"caller":"ui","duration_ms":1,"kind":"tool_call","ok":true,"params":{},"time":"2026-11-14T22:15:25Z","tool":"project_pins_list","ts":1794694525}
+{"caller":"ui","duration_ms":3,"kind":"tool_call","ok":true,"params":{},"time":"2026-11-14T22:15:25Z","tool":"project_pins_list","ts":1794694525}

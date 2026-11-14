@@ -54,6 +54,7 @@ pub enum ResetEnvMode {
     RestoreExample,
     RemoveEnv,
     RestoreBackup,
+    RestoreNewProductDraft,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -71,6 +72,7 @@ pub enum Modal {
         confirm: bool,
     },
     AddApp(AddAppForm),
+    NewProduct(NewProductForm),
     ResetEnv(ResetEnvForm),
     ConfirmText {
         title: String,
@@ -79,6 +81,58 @@ pub enum Modal {
         input: String,
         action: ConfirmAction,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NewProductField {
+    Id,
+    ImageRef,
+    DbPassword,
+    TunnelToken,
+    EdgeSubnet,
+    EdgeIpRange,
+    CloudflaredIp,
+    FrappeRef,
+    AppRepoUrl,
+    AppRepoRef,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewProductDraft {
+    pub id: String,
+    pub image_ref: String,
+    pub db_password: String,
+    pub tunnel_token: String,
+    pub edge_subnet: String,
+    pub edge_ip_range: String,
+    pub cloudflared_ip: String,
+    pub frappe_ref: String,
+    pub app_repo_url: String,
+    pub app_repo_ref: String,
+}
+
+impl Default for NewProductDraft {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            image_ref: "kodoo/new-product:latest".into(),
+            db_password: String::new(),
+            tunnel_token: String::new(),
+            edge_subnet: "172.30.10.0/28".into(),
+            edge_ip_range: "172.30.10.8/29".into(),
+            cloudflared_ip: "172.30.10.2".into(),
+            frappe_ref: String::new(),
+            app_repo_url: String::new(),
+            app_repo_ref: String::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewProductForm {
+    pub field: NewProductField,
+    pub draft: NewProductDraft,
+    pub error: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -217,6 +271,8 @@ pub struct AppState {
     pub apps_selected: usize,
     pub doctor: crate::domain::DoctorReport,
     pub doctor_selected: usize,
+    /// Drafts/valores informados na criação de novos produtos (acessíveis mid-session, inclusive para reset)
+    pub new_product_drafts: HashMap<String, NewProductDraft>,
 }
 
 impl AppState {
@@ -292,6 +348,7 @@ impl AppState {
             apps_selected: 0,
             doctor: crate::domain::DoctorReport::default(),
             doctor_selected: 0,
+            new_product_drafts: HashMap::new(),
         };
         s.refresh_onboarding();
         s.run_doctor_scan(false);
@@ -413,6 +470,7 @@ impl AppState {
             Modal::AddNode(_) => return self.handle_add_node_key(key),
             Modal::DropNode { .. } => return self.handle_drop_node_key(key),
             Modal::AddApp(_) => return self.handle_add_app_key(key),
+            Modal::NewProduct(_) => return self.handle_new_product_key(key),
             Modal::ResetEnv(_) => return self.handle_reset_env_key(key),
             Modal::ConfirmText { .. } => return self.handle_confirm_text_key(key),
             Modal::None => {}
@@ -667,6 +725,13 @@ impl AppState {
                     mode: ResetEnvMode::RestoreExample,
                     confirm_input: String::new(),
                 });
+                None
+            }
+            KeyCode::Char('N')
+                if (self.view == View::BridgesPlugins && self.bridge_panel == BridgePanel::Env)
+                    || self.view == View::ComposeStacks =>
+            {
+                self.open_new_product_modal();
                 None
             }
             KeyCode::Char('L') => {
@@ -2145,22 +2210,36 @@ impl AppState {
     fn handle_reset_env_key(&mut self, key: KeyEvent) -> Option<Action> {
         let mut close = false;
         let mut execute: Option<(Product, ResetEnvMode)> = None;
+        let has_draft = if let Modal::ResetEnv(ref form) = self.modal {
+            self.new_product_drafts.contains_key(form.product.label())
+        } else {
+            false
+        };
         if let Modal::ResetEnv(ref mut form) = self.modal {
+            let modes = if has_draft {
+                vec![
+                    ResetEnvMode::RestoreExample,
+                    ResetEnvMode::RemoveEnv,
+                    ResetEnvMode::RestoreBackup,
+                    ResetEnvMode::RestoreNewProductDraft,
+                ]
+            } else {
+                vec![
+                    ResetEnvMode::RestoreExample,
+                    ResetEnvMode::RemoveEnv,
+                    ResetEnvMode::RestoreBackup,
+                ]
+            };
+            let mut idx = modes.iter().position(|m| m == &form.mode).unwrap_or(0);
             match key.code {
                 KeyCode::Esc => close = true,
                 KeyCode::Up => {
-                    form.mode = match form.mode {
-                        ResetEnvMode::RestoreExample => ResetEnvMode::RestoreBackup,
-                        ResetEnvMode::RemoveEnv => ResetEnvMode::RestoreExample,
-                        ResetEnvMode::RestoreBackup => ResetEnvMode::RemoveEnv,
-                    };
+                    idx = if idx == 0 { modes.len() - 1 } else { idx - 1 };
+                    form.mode = modes[idx].clone();
                 }
                 KeyCode::Down => {
-                    form.mode = match form.mode {
-                        ResetEnvMode::RestoreExample => ResetEnvMode::RemoveEnv,
-                        ResetEnvMode::RemoveEnv => ResetEnvMode::RestoreBackup,
-                        ResetEnvMode::RestoreBackup => ResetEnvMode::RestoreExample,
-                    };
+                    idx = (idx + 1) % modes.len();
+                    form.mode = modes[idx].clone();
                 }
                 KeyCode::Backspace => {
                     form.confirm_input.pop();
@@ -2358,6 +2437,9 @@ impl AppState {
                     Err("nenhum backup .env.bak.* encontrado".to_string())
                 }
             }
+            ResetEnvMode::RestoreNewProductDraft => {
+                self.restore_env_from_new_product_draft(product)
+            }
         };
         self.env_states
             .insert(product.clone(), load_env_state(product));
@@ -2370,6 +2452,201 @@ impl AppState {
         }
         self.refresh_onboarding();
         self.run_doctor_scan(false);
+    }
+
+    fn restore_env_from_new_product_draft(&mut self, product: &Product) -> Result<String, String> {
+        let Some(draft) = self.new_product_drafts.get(product.label()).cloned() else {
+            return Err("nenhum rascunho de criação de produto disponível na sessão".into());
+        };
+        let path_s = product_env_path(product);
+        let path = Path::new(&path_s);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        if path.exists() || path.is_symlink() {
+            let _ = backup_env_file(path);
+        }
+        let content = build_env_from_draft(&draft);
+        write_env_atomic_secure(path, &content).map(|_| {
+            "restaurado com os valores informados na criação do produto (sessão)".to_string()
+        })
+    }
+
+    fn open_new_product_modal(&mut self) {
+        let mut draft = NewProductDraft::default();
+        let base_id = "novo-produto";
+        let mut n = 1;
+        let mut candidate = base_id.to_string();
+        while self.products.iter().any(|p| p.label() == candidate)
+            || Path::new("products").join(&candidate).exists()
+        {
+            n += 1;
+            candidate = format!("{base_id}-{n}");
+        }
+        draft.id = candidate.clone();
+        let octet = 10 + (self.products.len() as u8 % 200);
+        draft.edge_subnet = format!("172.30.{octet}.0/28");
+        draft.edge_ip_range = format!("172.30.{octet}.8/29");
+        draft.cloudflared_ip = format!("172.30.{octet}.2");
+        draft.image_ref = format!("kodoo/{candidate}:latest");
+        if let Ok(secret) = secrets::generate(secrets::SecretKind::Hex(24)) {
+            draft.db_password = secret;
+        }
+        self.modal = Modal::NewProduct(NewProductForm {
+            field: NewProductField::Id,
+            draft,
+            error: None,
+        });
+    }
+
+    fn handle_new_product_key(&mut self, key: KeyEvent) -> Option<Action> {
+        let mut close = false;
+        let mut create = false;
+        if let Modal::NewProduct(ref mut form) = self.modal {
+            match key.code {
+                KeyCode::Esc => close = true,
+                KeyCode::Tab => {
+                    form.field = match form.field {
+                        NewProductField::Id => NewProductField::ImageRef,
+                        NewProductField::ImageRef => NewProductField::DbPassword,
+                        NewProductField::DbPassword => NewProductField::TunnelToken,
+                        NewProductField::TunnelToken => NewProductField::EdgeSubnet,
+                        NewProductField::EdgeSubnet => NewProductField::EdgeIpRange,
+                        NewProductField::EdgeIpRange => NewProductField::CloudflaredIp,
+                        NewProductField::CloudflaredIp => NewProductField::FrappeRef,
+                        NewProductField::FrappeRef => NewProductField::AppRepoUrl,
+                        NewProductField::AppRepoUrl => NewProductField::AppRepoRef,
+                        NewProductField::AppRepoRef => NewProductField::Id,
+                    };
+                }
+                KeyCode::BackTab => {
+                    form.field = match form.field {
+                        NewProductField::Id => NewProductField::AppRepoRef,
+                        NewProductField::ImageRef => NewProductField::Id,
+                        NewProductField::DbPassword => NewProductField::ImageRef,
+                        NewProductField::TunnelToken => NewProductField::DbPassword,
+                        NewProductField::EdgeSubnet => NewProductField::TunnelToken,
+                        NewProductField::EdgeIpRange => NewProductField::EdgeSubnet,
+                        NewProductField::CloudflaredIp => NewProductField::EdgeIpRange,
+                        NewProductField::FrappeRef => NewProductField::CloudflaredIp,
+                        NewProductField::AppRepoUrl => NewProductField::FrappeRef,
+                        NewProductField::AppRepoRef => NewProductField::AppRepoUrl,
+                    };
+                }
+                KeyCode::Char('g') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    if form.field == NewProductField::DbPassword {
+                        if let Ok(s) = secrets::generate(secrets::SecretKind::Hex(24)) {
+                            form.draft.db_password = s;
+                        }
+                    }
+                }
+                KeyCode::Backspace => {
+                    Self::new_product_field_mut(form).pop();
+                    form.error = None;
+                }
+                KeyCode::Enter => {
+                    if let Err(e) = Self::validate_new_product_draft(&form.draft, &self.products) {
+                        form.error = Some(e);
+                    } else {
+                        create = true;
+                        close = true;
+                    }
+                }
+                KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    Self::new_product_field_mut(form).push(c);
+                    form.error = None;
+                }
+                _ => {}
+            }
+        }
+        let draft = if create {
+            if let Modal::NewProduct(ref form) = self.modal {
+                Some(form.draft.clone())
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        if close {
+            self.modal = Modal::None;
+        }
+        if let Some(draft) = draft {
+            self.create_new_product_from_draft(draft);
+        }
+        None
+    }
+
+    fn new_product_field_mut(form: &mut NewProductForm) -> &mut String {
+        match form.field {
+            NewProductField::Id => &mut form.draft.id,
+            NewProductField::ImageRef => &mut form.draft.image_ref,
+            NewProductField::DbPassword => &mut form.draft.db_password,
+            NewProductField::TunnelToken => &mut form.draft.tunnel_token,
+            NewProductField::EdgeSubnet => &mut form.draft.edge_subnet,
+            NewProductField::EdgeIpRange => &mut form.draft.edge_ip_range,
+            NewProductField::CloudflaredIp => &mut form.draft.cloudflared_ip,
+            NewProductField::FrappeRef => &mut form.draft.frappe_ref,
+            NewProductField::AppRepoUrl => &mut form.draft.app_repo_url,
+            NewProductField::AppRepoRef => &mut form.draft.app_repo_ref,
+        }
+    }
+
+    fn validate_new_product_draft(
+        draft: &NewProductDraft,
+        products: &[Product],
+    ) -> Result<(), String> {
+        let id = draft.id.trim();
+        if id.is_empty() {
+            return Err("Informe o id/nome do produto.".into());
+        }
+        if !Product::is_valid_id(id) {
+            return Err(
+                "Id inválido: evite vazio, '.', '..', barras e caracteres de controle.".into(),
+            );
+        }
+        if products.iter().any(|p| p.label() == id) || Path::new("products").join(id).exists() {
+            return Err(format!("O produto '{id}' já existe."));
+        }
+        if draft.image_ref.trim().is_empty() {
+            return Err("Informe IMAGE_REF.".into());
+        }
+        Ok(())
+    }
+
+    fn create_new_product_from_draft(&mut self, draft: NewProductDraft) {
+        let id = draft.id.trim().to_string();
+        let dir = Path::new("products").join(&id);
+        if let Err(e) = fs::create_dir_all(&dir) {
+            self.catalog_notice = Some(format!("Falha ao criar produto '{id}': {e}"));
+            return;
+        }
+        self.new_product_drafts.insert(id.clone(), draft.clone());
+
+        let env_example = build_env_example_from_draft(&draft);
+        let env_content = build_env_from_draft(&draft);
+        let apps = build_apps_json_from_draft(&draft);
+        let build_env = build_build_env_from_draft(&draft);
+
+        let _ = fs::write(dir.join(".env.example"), env_example);
+        let _ = fs::write(dir.join("apps.json"), apps);
+        let _ = fs::write(dir.join("build.env"), build_env);
+        let env_path = dir.join(".env");
+        if let Err(e) = write_env_atomic_secure(&env_path, &env_content) {
+            let _ = fs::write(&env_path, env_content);
+            self.catalog_notice = Some(format!(
+                "Produto '{id}' criado, mas houve aviso ao gravar .env com permissões seguras: {e}"
+            ));
+        } else {
+            self.catalog_notice = Some(format!(
+                "Produto '{id}' criado e configurado (rascunho salvo na sessão para reset)."
+            ));
+        }
+
+        self.reload_product_catalog();
+        if self.products.iter().any(|p| p.label() == id) {
+            self.switch_to_product(Product::new(id));
+        }
     }
 
     pub fn reload_product_catalog(&mut self) {
@@ -2683,6 +2960,91 @@ impl AppState {
         }
         "Valor de configuração. Informe o dado solicitado (texto, URL, caminho, etc.)."
     }
+}
+
+fn build_env_from_draft(draft: &NewProductDraft) -> String {
+    let id = draft.id.trim();
+    format!(
+        "# Copie para .env e preencha. chmod 600 .env. Nunca versione o .env.\n\
+\n\
+# --- Imagem -------------------------------------------------------------------\n\
+# Em producao use o DIGEST: kodoo/{id}@sha256:...\n\
+IMAGE_REF={}\n\
+PULL_POLICY=missing\n\
+\n\
+# --- Banco / cache ------------------------------------------------------------\n\
+# Gere com: openssl rand -hex 24\n\
+DB_PASSWORD={}\n\
+MARIADB_IMAGE=mariadb:11.8\n\
+# Fixe tag (ou digest) em producao.\n\
+REDIS_IMAGE=redis:8-alpine\n\
+\n\
+# --- Frappe -------------------------------------------------------------------\n\
+# Vazio = multi-tenant (site escolhido pelo Host). Preenchido = single-site.\n\
+FRAPPE_SITE_NAME_HEADER=\n\
+CLIENT_MAX_BODY_SIZE=50m\n\
+# Caminho do Chromium dentro da imagem (confirme: dpkg -L chromium-headless-shell).\n\
+# Vazio = nao configura.\n\
+CHROMIUM_PATH=\n\
+\n\
+# --- Cloudflare Tunnel (um conector por produto) ------------------------------\n\
+# Token do túnel (Cloudflare Zero Trust).\n\
+TUNNEL_TOKEN={}\n\
+# Rede de borda exclusiva (cloudflared + frontend). Nao pode colidir entre produtos.\n\
+EDGE_SUBNET={}\n\
+# Faixa de IPs dinamicos (metade superior da sub-rede); deve NAO conter o CLOUDFLARED_IP.\n\
+EDGE_IP_RANGE={}\n\
+# IP fixo do cloudflared nessa rede; e o unico em que o nginx confia para CF-Connecting-IP.\n\
+CLOUDFLARED_IP={}\n",
+        draft.image_ref.trim(),
+        draft.db_password.trim(),
+        draft.tunnel_token.trim(),
+        draft.edge_subnet.trim(),
+        draft.edge_ip_range.trim(),
+        draft.cloudflared_ip.trim(),
+    )
+}
+
+fn build_env_example_from_draft(draft: &NewProductDraft) -> String {
+    let mut d = draft.clone();
+    d.db_password.clear();
+    d.tunnel_token.clear();
+    build_env_from_draft(&d)
+}
+
+fn build_apps_json_from_draft(draft: &NewProductDraft) -> String {
+    let url = draft.app_repo_url.trim();
+    let refv = draft.app_repo_ref.trim();
+    if url.is_empty() {
+        return "[]\n".to_string();
+    }
+    serde_json::to_string_pretty(&serde_json::json!([
+        {
+            "url": url,
+            "branch": if refv.is_empty() { "<TAG_OU_COMMIT>" } else { refv }
+        }
+    ]))
+    .unwrap_or_else(|_| "[]\n".to_string())
+        + "\n"
+}
+
+fn build_build_env_from_draft(draft: &NewProductDraft) -> String {
+    let id = draft.id.trim();
+    let frappe_ref = draft.frappe_ref.trim();
+    format!(
+        "IMAGE=kodoo/{id}\n\
+IMAGE_TITLE=kodoo-{id}\n\
+# Tag (ou commit) do Frappe Framework. Obrigatorio.\n\
+FRAPPE_REF={}\n\
+# Mantido ate converter os print formats legados do ERPNext para Chromium.\n\
+INSTALL_WKHTMLTOPDF=true\n\
+INSTALL_CHROMIUM=true\n",
+        if frappe_ref.is_empty() {
+            "<TAG_OU_COMMIT_FRAPPE>"
+        } else {
+            frappe_ref
+        }
+    )
 }
 
 pub fn product_env_path(product: &Product) -> String {

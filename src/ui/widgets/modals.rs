@@ -5,7 +5,8 @@ use ratatui::widgets::{Block, BorderType, Borders, Clear, List, ListItem, Paragr
 use ratatui::Frame;
 
 use crate::app::{
-    AddAppForm, AddField, AddNodeForm, AppField, AppState, RefMode, ResetEnvForm, ResetEnvMode,
+    AddAppForm, AddField, AddNodeForm, AppField, AppState, NewProductField, NewProductForm,
+    RefMode, ResetEnvForm, ResetEnvMode,
 };
 use crate::ui::{layout, theme};
 
@@ -395,8 +396,8 @@ pub fn draw_add_app(f: &mut Frame, area: Rect, form: &AddAppForm) {
     f.render_widget(hint, rows[5]);
 }
 
-pub fn draw_reset_env(f: &mut Frame, area: Rect, form: &ResetEnvForm) {
-    let area = layout::centered_rect(70, 50, area);
+pub fn draw_reset_env(f: &mut Frame, area: Rect, state: &AppState, form: &ResetEnvForm) {
+    let area = layout::centered_rect(76, 54, area);
     f.render_widget(Clear, area);
     f.render_widget(
         Block::default().style(Style::default().bg(theme::MANTLE)),
@@ -410,7 +411,8 @@ pub fn draw_reset_env(f: &mut Frame, area: Rect, form: &ResetEnvForm) {
     let inner = block.inner(area);
     f.render_widget(block, area);
 
-    let modes = [
+    let has_draft = state.new_product_drafts.contains_key(form.product.label());
+    let mut modes: Vec<(ResetEnvMode, &str, &str)> = vec![
         (
             ResetEnvMode::RestoreExample,
             "Restaurar do .env.example",
@@ -427,9 +429,19 @@ pub fn draw_reset_env(f: &mut Frame, area: Rect, form: &ResetEnvForm) {
             "Restaura o backup .env.bak mais recente.",
         ),
     ];
+    if has_draft {
+        modes.push((
+            ResetEnvMode::RestoreNewProductDraft,
+            "Restaurar valores do novo produto (sessão)",
+            "Recria o .env com as variáveis informadas na criação (acessíveis mid-session).",
+        ));
+    }
 
     let mut lines = vec![
-        Line::from(Span::styled("Ação destrutiva: afeta apenas o .env deste produto. Não altera volumes nem outras stacks.", Style::default().fg(theme::YELLOW))),
+        Line::from(Span::styled(
+            "Ação destrutiva: afeta apenas o .env deste produto. Não altera volumes nem outras stacks.",
+            Style::default().fg(theme::YELLOW),
+        )),
         Line::from(""),
     ];
     for (mode, label, desc) in modes {
@@ -534,4 +546,170 @@ pub fn draw_confirm_text(
         )),
     ];
     f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: true }), inner);
+}
+
+pub fn draw_new_product(f: &mut Frame, area: Rect, form: &NewProductForm) {
+    let area = layout::centered_rect(84, 82, area);
+    f.render_widget(Clear, area);
+    f.render_widget(
+        Block::default().style(Style::default().bg(theme::MANTLE)),
+        area,
+    );
+    let block = Block::default()
+        .title("Novo produto (automatizado)")
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(theme::TEAL));
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Min(8),
+            Constraint::Length(3),
+        ])
+        .split(inner);
+
+    let intro = Paragraph::new(vec![
+        Line::from(Span::styled(
+            "Informe as variáveis de antemão. Os valores ficam salvos na sessão para facilitar reuso/reset.",
+            Style::default().fg(theme::SUBTEXT),
+        )),
+        Line::from(Span::styled(
+            "O produto, .env, .env.example, apps.json e build.env serão criados automaticamente.",
+            Style::default().fg(theme::SUBTEXT),
+        )),
+    ])
+    .wrap(Wrap { trim: true })
+    .block(Block::default().borders(Borders::NONE));
+    f.render_widget(intro, rows[0]);
+
+    let fields = [
+        (
+            NewProductField::Id,
+            "ID do produto",
+            form.draft.id.as_str(),
+            "Nome da pasta em products/<id> (obrigatório)",
+        ),
+        (
+            NewProductField::ImageRef,
+            "IMAGE_REF",
+            form.draft.image_ref.as_str(),
+            "Imagem/tag ou digest do produto",
+        ),
+        (
+            NewProductField::DbPassword,
+            "DB_PASSWORD",
+            form.draft.db_password.as_str(),
+            "Senha do banco (Ctrl+g gera)",
+        ),
+        (
+            NewProductField::TunnelToken,
+            "TUNNEL_TOKEN",
+            form.draft.tunnel_token.as_str(),
+            "Token do Cloudflare Tunnel",
+        ),
+        (
+            NewProductField::EdgeSubnet,
+            "EDGE_SUBNET",
+            form.draft.edge_subnet.as_str(),
+            "Rede de borda exclusiva",
+        ),
+        (
+            NewProductField::EdgeIpRange,
+            "EDGE_IP_RANGE",
+            form.draft.edge_ip_range.as_str(),
+            "Faixa de IPs dinâmicos",
+        ),
+        (
+            NewProductField::CloudflaredIp,
+            "CLOUDFLARED_IP",
+            form.draft.cloudflared_ip.as_str(),
+            "IP fixo do cloudflared",
+        ),
+        (
+            NewProductField::FrappeRef,
+            "FRAPPE_REF (build.env)",
+            form.draft.frappe_ref.as_str(),
+            "Tag/commit do Frappe Framework",
+        ),
+        (
+            NewProductField::AppRepoUrl,
+            "App repo URL (apps.json)",
+            form.draft.app_repo_url.as_str(),
+            "Repositório Git do app (opcional)",
+        ),
+        (
+            NewProductField::AppRepoRef,
+            "App repo ref (apps.json)",
+            form.draft.app_repo_ref.as_str(),
+            "Tag/commit/branch do app (opcional)",
+        ),
+    ];
+    let items: Vec<ListItem> = fields
+        .iter()
+        .map(|(fie, label, value, hint)| {
+            let active = *fie == form.field;
+            let shown = if value.is_empty() { "<vazio>" } else { *value };
+            ListItem::new(vec![
+                Line::from(vec![
+                    Span::styled(
+                        format!("{label}: "),
+                        Style::default()
+                            .fg(if active { theme::BLUE } else { theme::TEAL })
+                            .add_modifier(if active {
+                                Modifier::BOLD
+                            } else {
+                                Modifier::empty()
+                            }),
+                    ),
+                    Span::styled(
+                        shown.to_string(),
+                        Style::default().fg(if active { theme::TEXT } else { theme::SUBTEXT }),
+                    ),
+                ]),
+                Line::from(Span::styled(
+                    format!("  {hint}"),
+                    Style::default().fg(theme::OVERLAY),
+                )),
+            ])
+        })
+        .collect();
+    let list = List::new(items).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::default().fg(theme::BLUE))
+            .title("Variáveis iniciais (Tab navega, Enter cria)"),
+    );
+    f.render_widget(list, rows[1]);
+
+    let mut footer_lines = vec![Line::from(Span::styled(
+        "Tab/Shift+Tab: campos | Ctrl+g: gerar senha DB | Enter: criar produto | Esc: cancelar",
+        Style::default().fg(theme::SUBTEXT),
+    ))];
+    if let Some(err) = &form.error {
+        footer_lines.push(Line::from(Span::styled(
+            format!("Erro: {err}"),
+            Style::default().fg(theme::RED).add_modifier(Modifier::BOLD),
+        )));
+    } else {
+        footer_lines.push(Line::from(Span::styled(
+            "Dica: depois de criar, ajuste detalhes em Bridges & Plugins > Env e salve quando necessário.",
+            Style::default().fg(theme::SUBTEXT),
+        )));
+    }
+    f.render_widget(
+        Paragraph::new(footer_lines)
+            .wrap(Wrap { trim: true })
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .title("Ação"),
+            ),
+        rows[2],
+    );
 }

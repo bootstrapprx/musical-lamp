@@ -37,7 +37,8 @@ pub fn draw(f: &mut Frame, state: &AppState) {
         Modal::AddNode(form) => modals::draw_add_node(f, size, form),
         Modal::DropNode { confirm } => modals::draw_drop_node(f, size, state, *confirm),
         Modal::AddApp(form) => modals::draw_add_app(f, size, form),
-        Modal::ResetEnv(form) => modals::draw_reset_env(f, size, form),
+        Modal::NewProduct(form) => modals::draw_new_product(f, size, form),
+        Modal::ResetEnv(form) => modals::draw_reset_env(f, size, state, form),
         Modal::ConfirmText {
             title,
             message,
@@ -196,6 +197,7 @@ fn draw_footer(f: &mut Frame, area: ratatui::layout::Rect, state: &AppState) {
                 "[Tab] Campo (URL/Ref) | [Enter] Adicionar | [Esc] Cancelar"
             }
         }
+        Modal::NewProduct(_) => "[Tab/Shift+Tab] Campo | [Ctrl+g] Gerar senha DB | [Enter] Criar produto | [Esc] Cancelar",
         Modal::ResetEnv(_) => "[↑/↓] Modo | Digite confirmação | [Enter] Executar | [Esc] Cancelar",
         Modal::ConfirmText { .. } => "Digite a confirmação | [Enter] Confirmar | [Esc] Cancelar",
         Modal::None => match state.view {
@@ -203,18 +205,18 @@ fn draw_footer(f: &mut Frame, area: ratatui::layout::Rect, state: &AppState) {
                 "[Tab] Switch Pane | [↑/↓] Navigate | [1-4] Detail Tab | [a] Add Node | [d] Drop Node | [s] Simulate Load | [q] Quit"
             }
             View::ComposeStacks => match state.stack_panel {
-                StackPanel::Overview => "[Tab] Operações/Repositórios | [p] Produto | [1-3] Views | [q] Quit",
+                StackPanel::Overview => "[Tab] Operações/Repositórios | [p] Produto | [N] Novo produto | [1-3] Views | [q] Quit",
                 StackPanel::Operations => {
-                    "[↑/↓] Ação | [Enter] Executar | [u] Subir | [x] Parar | [t] Reiniciar | [c] Consultar | [f] Pre-flight | [k] Doctor | [K] Corrigir | [m] Migrar | [o] Logs | [Tab] Próximo painel | [q] Quit"
+                    "[↑/↓] Ação | [Enter] Executar | [u] Subir | [x] Parar | [t] Reiniciar | [c] Consultar | [f] Pre-flight | [k] Doctor | [K] Corrigir | [m] Migrar | [o] Logs | [N] Novo produto | [Tab] Próximo painel | [q] Quit"
                 }
-                StackPanel::AppRepos => "[↑/↓] Selecionar | [a] Adicionar | [d] Remover | [Tab] Próximo painel | [q] Quit",
+                StackPanel::AppRepos => "[↑/↓] Selecionar | [a] Adicionar | [d] Remover | [N] Novo produto | [Tab] Próximo painel | [q] Quit",
             },
             View::BridgesPlugins => match state.bridge_panel {
                 BridgePanel::Env => {
                     if state.env_editing {
                         "[Enter] Salvar valor | [Esc] Cancelar"
                     } else {
-                        "[↑/↓] Variável | [Enter] Editar | [g] Gerar do exemplo | [w] Salvar .env | [R] Reset .env | [L] Recarregar produtos | [Tab] Tunnel | [1-3] Views | [q] Quit"
+                        "[↑/↓] Variável | [Enter] Editar | [g] Gerar do exemplo | [w] Salvar .env | [R] Reset .env | [N] Novo produto | [L] Recarregar produtos | [Tab] Tunnel | [1-3] Views | [q] Quit"
                     }
                 }
                 BridgePanel::Tunnel => "[Tab] Env | [1-3] Views | [q] Quit",
