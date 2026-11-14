@@ -1,16 +1,19 @@
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph, Wrap};
+use ratatui::widgets::{Block, BorderType, Borders, Clear, List, ListItem, Paragraph, Wrap};
 use ratatui::Frame;
 
-use crate::app::{AddAppForm, AddField, AddNodeForm, AppField, AppState};
+use crate::app::{AddAppForm, AddField, AddNodeForm, AppField, AppState, RefMode};
 use crate::ui::{layout, theme};
 
 pub fn draw_add_node(f: &mut Frame, area: Rect, form: &AddNodeForm) {
     let area = layout::centered_rect(60, 50, area);
     f.render_widget(Clear, area);
-    f.render_widget(Block::default().style(Style::default().bg(theme::MANTLE)), area);
+    f.render_widget(
+        Block::default().style(Style::default().bg(theme::MANTLE)),
+        area,
+    );
     let block = Block::default()
         .title("Add Node [a]")
         .borders(Borders::ALL)
@@ -115,7 +118,10 @@ fn draw_field(f: &mut Frame, area: Rect, label: &str, value: &str, active: bool)
 pub fn draw_drop_node(f: &mut Frame, area: Rect, state: &AppState, confirm: bool) {
     let area = layout::centered_rect(58, 40, area);
     f.render_widget(Clear, area);
-    f.render_widget(Block::default().style(Style::default().bg(theme::MANTLE)), area);
+    f.render_widget(
+        Block::default().style(Style::default().bg(theme::MANTLE)),
+        area,
+    );
     let block = Block::default()
         .title("Drop Node [d]")
         .borders(Borders::ALL)
@@ -190,62 +196,74 @@ pub fn draw_drop_node(f: &mut Frame, area: Rect, state: &AppState, confirm: bool
 }
 
 pub fn draw_add_app(f: &mut Frame, area: Rect, form: &AddAppForm) {
-    let area = layout::centered_rect(75, 70, area);
+    let area = layout::centered_rect(78, 78, area);
     f.render_widget(Clear, area);
-    f.render_widget(Block::default().style(Style::default().bg(theme::MANTLE)), area);
+    f.render_widget(
+        Block::default().style(Style::default().bg(theme::MANTLE)),
+        area,
+    );
     let block = Block::default()
-        .title("Adicionar app no bench (apps.json)")
+        .title("Adicionar app no bench (apps.json) — produto ativo vinculante")
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(theme::TEAL));
     let inner = block.inner(area);
     f.render_widget(block, area);
 
-    let compact = inner.height < 10;
+    let compact = inner.height < 16;
     let has_error = form.error.is_some();
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints(if compact {
-            if has_error {
-                [
-                    Constraint::Length(1),
-                    Constraint::Length(2),
-                    Constraint::Length(2),
-                    Constraint::Length(1),
-                    Constraint::Min(1),
-                ]
-            } else {
-                [
-                    Constraint::Length(1),
-                    Constraint::Length(2),
-                    Constraint::Length(2),
-                    Constraint::Length(0),
-                    Constraint::Min(1),
-                ]
-            }
-        } else if has_error {
-            [
+    let dropdown_open =
+        form.field == AppField::Ref && form.ref_mode == RefMode::Dropdown && form.ref_dropdown_open;
+    let dropdown_h = if dropdown_open { 7 } else { 0 };
+
+    let constraints = if compact {
+        if has_error {
+            vec![
+                Constraint::Length(1),
                 Constraint::Length(2),
-                Constraint::Length(3),
-                Constraint::Length(3),
                 Constraint::Length(2),
-                Constraint::Min(2),
+                Constraint::Length(dropdown_h),
+                Constraint::Length(1),
+                Constraint::Min(1),
             ]
         } else {
-            [
+            vec![
+                Constraint::Length(1),
                 Constraint::Length(2),
-                Constraint::Length(3),
-                Constraint::Length(3),
+                Constraint::Length(2),
+                Constraint::Length(dropdown_h),
                 Constraint::Length(0),
-                Constraint::Min(2),
+                Constraint::Min(1),
             ]
-        })
+        }
+    } else if has_error {
+        vec![
+            Constraint::Length(2),
+            Constraint::Length(3),
+            Constraint::Length(3),
+            Constraint::Length(dropdown_h),
+            Constraint::Length(2),
+            Constraint::Min(2),
+        ]
+    } else {
+        vec![
+            Constraint::Length(2),
+            Constraint::Length(3),
+            Constraint::Length(3),
+            Constraint::Length(dropdown_h),
+            Constraint::Length(0),
+            Constraint::Min(2),
+        ]
+    };
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(constraints)
         .split(inner);
 
     let intro_text = if compact {
-        "Repo Git e referência fixa (tag/commit)."
+        "Repo Git e ref vinculada ao produto ativo (existentes/aguardadas)."
     } else {
-        "Informe o repositório Git do app e a tag/commit (referência fixa) para o bench instalar."
+        "Informe o repositório Git e selecione uma ref existente/aguardada do produto ativo ou crie uma nova."
     };
     let intro = Paragraph::new(Line::from(Span::styled(
         intro_text,
@@ -259,7 +277,7 @@ pub fn draw_add_app(f: &mut Frame, area: Rect, form: &AddAppForm) {
     } else {
         theme::OVERLAY
     };
-    let branch_border = if form.field == AppField::Branch {
+    let ref_border = if form.field == AppField::Ref {
         theme::BLUE
     } else {
         theme::OVERLAY
@@ -269,11 +287,19 @@ pub fn draw_add_app(f: &mut Frame, area: Rect, form: &AddAppForm) {
     } else {
         form.url.clone()
     };
-    let branch_value = if form.branch.is_empty() {
-        "v1.2.3 ou commit SHA".into()
+    let ref_value = if form.ref_value.is_empty() {
+        match form.ref_mode {
+            RefMode::Dropdown => "Selecione uma ref (↑/↓, Enter/Espaço)".into(),
+            RefMode::CustomInput => "Digite nova ref (tag/commit)".into(),
+        }
     } else {
-        form.branch.clone()
+        form.ref_value.clone()
     };
+    let ref_title = match form.ref_mode {
+        RefMode::Dropdown => "Ref (dropdown: existentes e aguardadas, produto ativo)",
+        RefMode::CustomInput => "Ref (nova ref personalizada, produto ativo)",
+    };
+
     let url_p = Paragraph::new(url_value)
         .style(Style::default().fg(if form.field == AppField::Url {
             theme::TEXT
@@ -287,8 +313,8 @@ pub fn draw_add_app(f: &mut Frame, area: Rect, form: &AddAppForm) {
                 .border_style(Style::default().fg(url_border))
                 .title("URL do repositório (Git)"),
         );
-    let branch_p = Paragraph::new(branch_value)
-        .style(Style::default().fg(if form.field == AppField::Branch {
+    let ref_p = Paragraph::new(ref_value)
+        .style(Style::default().fg(if form.field == AppField::Ref {
             theme::TEXT
         } else {
             theme::SUBTEXT
@@ -297,11 +323,55 @@ pub fn draw_add_app(f: &mut Frame, area: Rect, form: &AddAppForm) {
             Block::default()
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(branch_border))
-                .title("Branch/Tag/Commit (referência)"),
+                .border_style(Style::default().fg(ref_border))
+                .title(ref_title),
         );
     f.render_widget(url_p, rows[1]);
-    f.render_widget(branch_p, rows[2]);
+    f.render_widget(ref_p, rows[2]);
+
+    if dropdown_open {
+        let items: Vec<ListItem> = if form.ref_options.is_empty() {
+            vec![ListItem::new(Line::from(Span::styled(
+                "Nenhuma ref encontrada — use Ctrl+n para criar nova",
+                Style::default().fg(theme::SUBTEXT),
+            )))]
+        } else {
+            form.ref_options
+                .iter()
+                .enumerate()
+                .map(|(i, opt)| {
+                    let selected = i == form.ref_selected;
+                    let (prefix, color) = if opt.value.is_empty() {
+                        ("＋ ", theme::GREEN)
+                    } else if opt.awaited {
+                        ("⏳ ", theme::YELLOW)
+                    } else {
+                        ("• ", theme::TEAL)
+                    };
+                    let style = if selected {
+                        Style::default()
+                            .fg(theme::TEXT)
+                            .bg(theme::OVERLAY)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(color)
+                    };
+                    ListItem::new(Line::from(vec![
+                        Span::styled(prefix, style),
+                        Span::styled(opt.label.clone(), style),
+                    ]))
+                })
+                .collect()
+        };
+        let list = List::new(items).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(Style::default().fg(theme::BLUE))
+                .title("Refs do produto ativo (existentes/aguardadas)"),
+        );
+        f.render_widget(list, rows[3]);
+    }
 
     if let Some(err) = &form.error {
         let err_p = Paragraph::new(Line::from(Span::styled(
@@ -309,16 +379,16 @@ pub fn draw_add_app(f: &mut Frame, area: Rect, form: &AddAppForm) {
             Style::default().fg(theme::RED).add_modifier(Modifier::BOLD),
         )))
         .wrap(Wrap { trim: true });
-        f.render_widget(err_p, rows[3]);
+        f.render_widget(err_p, rows[4]);
     }
 
     let hint_text = if compact {
-        "Tab alterna | Enter adiciona | Esc cancela"
+        "Tab campo | Ref: ↑/↓ Espaço/Enter | Ctrl+n nova | Enter adiciona"
     } else {
-        "Tab alterna | Enter adiciona em apps.json | Esc cancela"
+        "Tab alterna campos | Ref: ↑/↓ seleciona, Espaço/Enter abre/confirma, Ctrl+n cria nova ref | Enter adiciona em apps.json | Esc cancela"
     };
     let hint = Paragraph::new(hint_text)
         .style(Style::default().fg(theme::SUBTEXT))
         .wrap(Wrap { trim: true });
-    f.render_widget(hint, rows[4]);
+    f.render_widget(hint, rows[5]);
 }

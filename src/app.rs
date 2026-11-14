@@ -91,25 +91,64 @@ impl Default for AddNodeForm {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AppField {
     Url,
-    Branch,
+    Ref,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RefMode {
+    Dropdown,
+    CustomInput,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RefOption {
+    pub label: String,
+    pub value: String,
+    pub awaited: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AddAppForm {
     pub url: String,
-    pub branch: String,
+    pub ref_value: String,
     pub field: AppField,
     pub error: Option<String>,
+    pub ref_mode: RefMode,
+    pub ref_options: Vec<RefOption>,
+    pub ref_dropdown_open: bool,
+    pub ref_selected: usize,
+}
+
+impl AddAppForm {
+    pub fn new(product: Product) -> Self {
+        let ref_options = AppState::ref_options_for_product(product);
+        let ref_selected = 0;
+        let ref_value = ref_options
+            .first()
+            .filter(|o| !o.value.is_empty())
+            .map(|o| o.value.clone())
+            .unwrap_or_default();
+        let ref_mode = if ref_options.is_empty() {
+            RefMode::CustomInput
+        } else {
+            RefMode::Dropdown
+        };
+        Self {
+            url: String::new(),
+            ref_value,
+            field: AppField::Url,
+            error: None,
+            ref_mode,
+            ref_options,
+            ref_dropdown_open: false,
+            ref_selected,
+        }
+    }
 }
 
 impl Default for AddAppForm {
     fn default() -> Self {
-        Self {
-            url: String::new(),
-            branch: String::new(),
-            field: AppField::Url,
-            error: None,
-        }
+        Self::new(Product::Accounting)
     }
 }
 
@@ -489,6 +528,22 @@ impl AppState {
                 self.refresh_onboarding();
                 self.run_doctor_scan(false);
                 self.apps_selected = 0;
+                if let Modal::AddApp(ref mut form) = self.modal {
+                    form.ref_options = Self::ref_options_for_product(self.featured_product);
+                    form.ref_selected = 0;
+                    form.ref_dropdown_open = false;
+                    if form.ref_mode == RefMode::Dropdown {
+                        form.ref_value = form
+                            .ref_options
+                            .first()
+                            .filter(|o| !o.value.is_empty())
+                            .map(|o| o.value.clone())
+                            .unwrap_or_default();
+                        if form.ref_options.is_empty() {
+                            form.ref_mode = RefMode::CustomInput;
+                        }
+                    }
+                }
                 None
             }
             KeyCode::Up => {
@@ -1307,7 +1362,9 @@ impl AppState {
                         }
                     },
                     Err(e) => {
-                        report.failed.push(format!("Falha ao ler .env.example: {e}"));
+                        report
+                            .failed
+                            .push(format!("Falha ao ler .env.example: {e}"));
                     }
                 }
             }
@@ -1400,7 +1457,8 @@ impl AppState {
                             if let Some(env) = self.env_states.get_mut(&product) {
                                 env.dirty = false;
                                 env.last_action =
-                                    "Correção abortada: não foi possível ler o .env existente".into();
+                                    "Correção abortada: não foi possível ler o .env existente"
+                                        .into();
                             }
                             self.env_states.insert(product, load_env_state(product));
                             false
@@ -1901,14 +1959,95 @@ impl AppState {
         }
         match key.code {
             KeyCode::Esc => {
-                self.modal = Modal::None;
+                let should_close = if let Modal::AddApp(ref mut form) = self.modal {
+                    if form.field == AppField::Ref && form.ref_dropdown_open {
+                        form.ref_dropdown_open = false;
+                        false
+                    } else {
+                        true
+                    }
+                } else {
+                    true
+                };
+                if should_close {
+                    self.modal = Modal::None;
+                }
             }
             KeyCode::Tab => {
                 if let Modal::AddApp(ref mut form) = self.modal {
+                    form.ref_dropdown_open = false;
                     form.field = match form.field {
-                        AppField::Url => AppField::Branch,
-                        AppField::Branch => AppField::Url,
+                        AppField::Url => AppField::Ref,
+                        AppField::Ref => AppField::Url,
                     };
+                }
+            }
+            KeyCode::Up => {
+                if let Modal::AddApp(ref mut form) = self.modal {
+                    if form.field == AppField::Ref
+                        && form.ref_mode == RefMode::Dropdown
+                        && !form.ref_options.is_empty()
+                    {
+                        form.ref_dropdown_open = true;
+                        if form.ref_selected == 0 {
+                            form.ref_selected = form.ref_options.len() - 1;
+                        } else {
+                            form.ref_selected -= 1;
+                        }
+                        if let Some(opt) = form.ref_options.get(form.ref_selected) {
+                            if !opt.value.is_empty() {
+                                form.ref_value = opt.value.clone();
+                            }
+                        }
+                    }
+                }
+            }
+            KeyCode::Down => {
+                if let Modal::AddApp(ref mut form) = self.modal {
+                    if form.field == AppField::Ref
+                        && form.ref_mode == RefMode::Dropdown
+                        && !form.ref_options.is_empty()
+                    {
+                        form.ref_dropdown_open = true;
+                        form.ref_selected = (form.ref_selected + 1) % form.ref_options.len();
+                        if let Some(opt) = form.ref_options.get(form.ref_selected) {
+                            if !opt.value.is_empty() {
+                                form.ref_value = opt.value.clone();
+                            }
+                        }
+                    }
+                }
+            }
+            KeyCode::Char('n')
+                if key.modifiers.contains(KeyModifiers::CONTROL)
+                    && matches!(self.modal, Modal::AddApp(ref f) if f.field == AppField::Ref) =>
+            {
+                if let Modal::AddApp(ref mut form) = self.modal {
+                    form.ref_mode = RefMode::CustomInput;
+                    form.ref_dropdown_open = false;
+                    form.ref_value.clear();
+                    form.error = None;
+                }
+            }
+            KeyCode::Char('l')
+                if key.modifiers.contains(KeyModifiers::CONTROL)
+                    && matches!(self.modal, Modal::AddApp(ref f) if f.field == AppField::Ref) =>
+            {
+                if let Modal::AddApp(ref mut form) = self.modal {
+                    form.ref_options = AppState::ref_options_for_product(self.featured_product);
+                    form.ref_mode = if form.ref_options.is_empty() {
+                        RefMode::CustomInput
+                    } else {
+                        RefMode::Dropdown
+                    };
+                    form.ref_selected = 0;
+                    form.ref_dropdown_open = true;
+                    if let Some(opt) = form.ref_options.first() {
+                        if !opt.value.is_empty() {
+                            form.ref_value = opt.value.clone();
+                        }
+                    }
+                    form.error = None;
                 }
             }
             KeyCode::Backspace => {
@@ -1917,35 +2056,78 @@ impl AppState {
                         AppField::Url => {
                             form.url.pop();
                         }
-                        AppField::Branch => {
-                            form.branch.pop();
+                        AppField::Ref => {
+                            if form.ref_mode == RefMode::CustomInput {
+                                form.ref_value.pop();
+                            } else {
+                                // switch to custom input to edit freely
+                                form.ref_mode = RefMode::CustomInput;
+                                form.ref_dropdown_open = false;
+                                form.ref_value.pop();
+                            }
                         }
                     }
                     form.error = None;
                 }
             }
+            KeyCode::Char(' ') if matches!(self.modal, Modal::AddApp(ref f) if f.field == AppField::Ref && f.ref_mode == RefMode::Dropdown) => {
+                if let Modal::AddApp(ref mut form) = self.modal {
+                    form.ref_dropdown_open = !form.ref_dropdown_open;
+                }
+            }
             KeyCode::Enter => {
-                let (url, branch) = if let Modal::AddApp(ref form) = self.modal {
-                    (form.url.trim().to_string(), form.branch.trim().to_string())
+                let mut handled_dropdown = false;
+                if let Modal::AddApp(ref mut form) = self.modal {
+                    if form.field == AppField::Ref
+                        && form.ref_mode == RefMode::Dropdown
+                        && form.ref_dropdown_open
+                    {
+                        if let Some(opt) = form.ref_options.get(form.ref_selected).cloned() {
+                            if opt.value.is_empty() {
+                                form.ref_mode = RefMode::CustomInput;
+                                form.ref_value.clear();
+                            } else {
+                                form.ref_value = opt.value;
+                            }
+                            form.ref_dropdown_open = false;
+                        }
+                        handled_dropdown = true;
+                    } else if form.field == AppField::Ref
+                        && form.ref_mode == RefMode::Dropdown
+                        && !form.ref_dropdown_open
+                    {
+                        form.ref_dropdown_open = true;
+                        handled_dropdown = true;
+                    }
+                }
+                if handled_dropdown {
+                    return None;
+                }
+
+                let (url, ref_value) = if let Modal::AddApp(ref form) = self.modal {
+                    (
+                        form.url.trim().to_string(),
+                        form.ref_value.trim().to_string(),
+                    )
                 } else {
                     return None;
                 };
-                if url.is_empty() || branch.is_empty() {
+                if url.is_empty() || ref_value.is_empty() {
                     if let Modal::AddApp(ref mut form) = self.modal {
                         form.error = Some(
-                            "Preencha a URL do repositório e a referência (tag/commit).".into(),
+                            "Preencha a URL do repositório e selecione/crie uma ref (tag/commit) vinculada ao produto ativo."
+                                .into(),
                         );
                     }
                     return None;
                 }
-                match self.add_app_entry(&url, &branch) {
+                match self.add_app_entry(&url, &ref_value) {
                     Ok(()) => {
                         self.modal = Modal::None;
                     }
                     Err(e) => {
                         if let Modal::AddApp(ref mut form) = self.modal {
-                            form.error =
-                                Some(format!("Não foi possível salvar apps.json: {e}"));
+                            form.error = Some(format!("Não foi possível salvar apps.json: {e}"));
                         }
                     }
                 }
@@ -1954,7 +2136,13 @@ impl AppState {
                 if let Modal::AddApp(ref mut form) = self.modal {
                     match form.field {
                         AppField::Url => form.url.push(c),
-                        AppField::Branch => form.branch.push(c),
+                        AppField::Ref => {
+                            if form.ref_mode != RefMode::CustomInput {
+                                form.ref_mode = RefMode::CustomInput;
+                                form.ref_dropdown_open = false;
+                            }
+                            form.ref_value.push(c);
+                        }
                     }
                     form.error = None;
                 }
@@ -1973,6 +2161,85 @@ impl AppState {
 
     pub fn apps_load_error(&self) -> Option<String> {
         self.load_apps_json().err()
+    }
+
+    fn is_placeholder_ref(value: &str) -> bool {
+        let v = value.trim();
+        v.is_empty()
+            || (v.starts_with('<') && v.ends_with('>'))
+            || v.contains("TAG_OU_COMMIT")
+            || v.contains("TAG_DO_")
+            || v.contains("BRANCH")
+            || v.contains("PLACEHOLDER")
+    }
+
+    pub fn ref_options_for_product(product: Product) -> Vec<RefOption> {
+        let mut options: Vec<RefOption> = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+
+        let path = Path::new("products").join(product.label()).join("apps.json");
+        let arr = match fs::read_to_string(&path) {
+            Ok(text) => serde_json::from_str::<serde_json::Value>(&text)
+                .ok()
+                .and_then(|v| v.as_array().cloned())
+                .unwrap_or_default(),
+            Err(_) => vec![],
+        };
+
+        for a in &arr {
+            if let Some(b) = a.get("branch").and_then(|x| x.as_str()) {
+                let val = b.to_string();
+                if seen.insert(format!("v:{val}")) {
+                    if Self::is_placeholder_ref(&val) {
+                        options.push(RefOption {
+                            label: format!("Aguardada: {val}"),
+                            value: val,
+                            awaited: true,
+                        });
+                    } else {
+                        options.push(RefOption {
+                            label: format!("Existente: {val}"),
+                            value: val,
+                            awaited: false,
+                        });
+                    }
+                }
+            }
+        }
+
+        let build_path = Path::new("products").join(product.label()).join("build.env");
+        if let Ok(content) = fs::read_to_string(build_path) {
+            for line in content.lines() {
+                let t = line.trim();
+                if let Some(v) = t.strip_prefix("FRAPPE_REF=") {
+                    let val = v.trim().to_string();
+                    if !val.is_empty()
+                        && Self::is_placeholder_ref(&val)
+                        && seen.insert(format!("b:{val}"))
+                    {
+                        options.push(RefOption {
+                            label: format!("Aguardada (build): {val}"),
+                            value: val,
+                            awaited: true,
+                        });
+                    } else if val.is_empty() && seen.insert("b:FRAPPE_REF_EMPTY".to_string()) {
+                        options.push(RefOption {
+                            label: "Aguardada (build): definir FRAPPE_REF".into(),
+                            value: String::new(),
+                            awaited: true,
+                        });
+                    }
+                }
+            }
+        }
+
+        options.sort_by(|a, b| a.awaited.cmp(&b.awaited).then(a.label.cmp(&b.label)));
+        options.push(RefOption {
+            label: "Criar nova ref (digitar)".into(),
+            value: String::new(),
+            awaited: false,
+        });
+        options
     }
 
     fn apps_json_path(&self) -> std::path::PathBuf {
@@ -2025,7 +2292,8 @@ impl AppState {
             }
         }
         let tmp = path.with_file_name("apps.json.tmp");
-        fs::write(&tmp, out + "\n").map_err(|e| format!("falha ao salvar {}: {e}", tmp.display()))?;
+        fs::write(&tmp, out + "\n")
+            .map_err(|e| format!("falha ao salvar {}: {e}", tmp.display()))?;
         fs::rename(&tmp, path).map_err(|e| format!("falha ao salvar {}: {e}", path.display()))
     }
 
@@ -2353,7 +2621,10 @@ mod doctor_tests {
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_nanos())
             .unwrap_or(0);
-        let dir = std::env::temp_dir().join(format!("musical-lamp-{prefix}-{}-{nanos}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!(
+            "musical-lamp-{prefix}-{}-{nanos}",
+            std::process::id()
+        ));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(dir.join("products/accounting")).unwrap();
         fs::create_dir_all(dir.join("products/trivia")).unwrap();
@@ -2384,7 +2655,9 @@ mod doctor_tests {
             Box::new(crate::telemetry::MockTelemetryProvider::new());
         let mut state = AppState::new(telemetry);
         state.featured_product = Product::Accounting;
-        state.env_states.insert(Product::Accounting, load_env_state(Product::Accounting));
+        state
+            .env_states
+            .insert(Product::Accounting, load_env_state(Product::Accounting));
         state.run_doctor_scan(false);
 
         // force write failure without relying on permissions root may bypass:
@@ -2405,24 +2678,32 @@ mod doctor_tests {
         #[cfg(unix)]
         {
             let meta = fs::symlink_metadata(&env_path).unwrap();
-            assert!(meta.file_type().is_symlink(), "falha de gravação não deve substituir link simbólico");
-            assert!(target_dir.is_dir(), "destino do link deve permanecer intacto");
+            assert!(
+                meta.file_type().is_symlink(),
+                "falha de gravação não deve substituir link simbólico"
+            );
+            assert!(
+                target_dir.is_dir(),
+                "destino do link deve permanecer intacto"
+            );
         }
         #[cfg(not(unix))]
         {
-            assert!(env_path.is_dir(), "falha de gravação não deve corromper o destino existente");
+            assert!(
+                env_path.is_dir(),
+                "falha de gravação não deve corromper o destino existente"
+            );
         }
 
-        let has_fill_applied = state
-            .doctor
-            .applied
-            .iter()
-            .any(|m| m.contains("Preenchidos") || m.contains("Adicionadas") || m.contains("Salvo products/accounting/.env"));
+        let has_fill_applied = state.doctor.applied.iter().any(|m| {
+            m.contains("Preenchidos")
+                || m.contains("Adicionadas")
+                || m.contains("Salvo products/accounting/.env")
+        });
         assert!(
             !has_fill_applied,
             "correções não persistidas não devem constar como aplicadas: {:?} (falhas: {:?})",
-            state.doctor.applied,
-            state.doctor.failed
+            state.doctor.applied, state.doctor.failed
         );
         assert!(
             !state.doctor.failed.is_empty(),
@@ -2450,15 +2731,26 @@ mod doctor_tests {
             Box::new(crate::telemetry::MockTelemetryProvider::new());
         let mut state = AppState::new(telemetry);
         state.featured_product = Product::Accounting;
-        state.env_states.insert(Product::Accounting, load_env_state(Product::Accounting));
+        state
+            .env_states
+            .insert(Product::Accounting, load_env_state(Product::Accounting));
         state.run_doctor_scan(true);
 
         let env_meta = fs::symlink_metadata(&env_path).unwrap();
-        assert!(env_meta.file_type().is_symlink(), ".env deve permanecer como link simbólico");
+        assert!(
+            env_meta.file_type().is_symlink(),
+            ".env deve permanecer como link simbólico"
+        );
         let inter_meta = fs::symlink_metadata(&intermediate).unwrap();
-        assert!(inter_meta.file_type().is_symlink(), "link intermediário deve permanecer");
+        assert!(
+            inter_meta.file_type().is_symlink(),
+            "link intermediário deve permanecer"
+        );
         let final_content = fs::read_to_string(&real).unwrap();
-        assert!(final_content.contains("IMAGE_REF="), "arquivo final deve ser atualizado");
+        assert!(
+            final_content.contains("IMAGE_REF="),
+            "arquivo final deve ser atualizado"
+        );
         assert!(
             !final_content.contains("DB_PASSWORD=\n"),
             "correção automática deve preencher senha no destino final"
@@ -2489,7 +2781,9 @@ mod doctor_tests {
             Box::new(crate::telemetry::MockTelemetryProvider::new());
         let mut state = AppState::new(telemetry);
         state.featured_product = Product::Accounting;
-        state.env_states.insert(Product::Accounting, load_env_state(Product::Accounting));
+        state
+            .env_states
+            .insert(Product::Accounting, load_env_state(Product::Accounting));
         state.run_doctor_scan(true);
 
         assert!(
@@ -2507,7 +2801,11 @@ mod doctor_tests {
             state.doctor.applied
         );
         assert!(
-            state.doctor.failed.iter().any(|m| m.contains("ler .env existente") || m.contains("Falha")),
+            state
+                .doctor
+                .failed
+                .iter()
+                .any(|m| m.contains("ler .env existente") || m.contains("Falha")),
             "deve reportar falha ao ler .env existente: {:?}",
             state.doctor.failed
         );

@@ -9,7 +9,7 @@
   "status": "ready",
   "note": "Ready: all 2 checks pass.",
   "created_ms": 1794595666281,
-  "updated_ms": 1794684560149,
+  "updated_ms": 1794685145752,
   "checks": [
     {
       "round": 1,
@@ -406,13 +406,31 @@
       "note": "`cargo test --quiet` passed.",
       "artifacts": [],
       "at_ms": 1794684560140
+    },
+    {
+      "round": 23,
+      "check": "build",
+      "passed": true,
+      "similarity": null,
+      "note": "`cargo build --quiet` passed.",
+      "artifacts": [],
+      "at_ms": 1794685136757
+    },
+    {
+      "round": 23,
+      "check": "own-tests",
+      "passed": true,
+      "similarity": null,
+      "note": "`cargo test --quiet` passed.",
+      "artifacts": [],
+      "at_ms": 1794685137293
     }
   ],
   "agent_session": null,
   "agent_session_by": "opencode",
   "capture_deep": true,
   "allowed_actions": [],
-  "last_reply": "Corrigi o problema do modal para adicionar repositórios de aplicativos: agora, se algum campo ficar vazio, o aviso aparece dentro do próprio modal e ele não envia mais essa mensagem para a aba de Operações. Também deixei o fundo do modal mais sólido para evitar que o conteúdo de trás apareça por cima enquanto ele está aberto.\n\nNão refiz toda a interface grande descrita na sua missão neste turno; foquei em resolver esse erro específico que você relatou no comportamento atual. Ainda podem existir outros ajustes visuais ou de validação em outros modais que valham uma revisão.\n\nSe quiser, no próximo passo posso revisar todos os modais da interface para garantir que mensagens de erro e confirmações apareçam sempre no lugar certo.",
+  "last_reply": "Atualizei a tela de adicionar aplicativos do bench com um seletor de referências ligado ao produto ativo, onde você pode escolher entre referências já existentes e as que ainda estão aguardadas, ou criar uma nova referência diretamente. Essa escolha fica vinculada ao produto ativo para evitar confusão entre ambientes e manter o cadastro consistente.\n\nMantive o que já funcionava na interface e nas operações, e as verificações automáticas do projeto passaram. Como diferença em relação a um fluxo totalmente automático, as referências \"aguardadas\" vêm do que já está indicado no produto e podem precisar ser ajustadas por você conforme a versão real que deseja usar. Uma boa próxima pergunta seria se você quer que esse mesmo seletor de referências apareça também para editar ou revisar os aplicativos já cadastrados.",
   "asset_budget_usd": 5.0,
   "generate_assets": false,
   "app_in_root": true,

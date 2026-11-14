@@ -175,7 +175,13 @@ fn draw_footer(f: &mut Frame, area: ratatui::layout::Rect, state: &AppState) {
     let text = match &state.modal {
         Modal::AddNode(_) => "[Tab] Campo | [Enter] Confirmar | [Esc] Cancelar",
         Modal::DropNode { .. } => "[Tab/←/→] Alternar | [Enter/y] Confirmar | [Esc/n] Cancelar",
-        Modal::AddApp(_) => "[Tab] Campo (URL/Ref) | [Enter] Adicionar | [Esc] Cancelar",
+        Modal::AddApp(form) => {
+            if form.field == crate::app::AppField::Ref {
+                "[↑/↓] Selecionar ref | [Espaço/Enter] Abrir/confirmar | [Ctrl+n] Nova ref | [Tab] Campo | [Esc] Fechar"
+            } else {
+                "[Tab] Campo (URL/Ref) | [Enter] Adicionar | [Esc] Cancelar"
+            }
+        }
         Modal::None => match state.view {
             View::ClusterFinOps => {
                 "[Tab] Switch Pane | [↑/↓] Navigate | [1-4] Detail Tab | [a] Add Node | [d] Drop Node | [s] Simulate Load | [q] Quit"

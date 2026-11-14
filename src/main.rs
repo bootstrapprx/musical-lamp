@@ -46,10 +46,12 @@ fn find_root() -> Option<PathBuf> {
         let p = PathBuf::from(r);
         return has_marker(&p).then_some(p);
     }
-    std::env::current_dir()
-        .ok()
-        .and_then(walk_up)
-        .or_else(|| std::env::current_exe().ok().and_then(|e| e.parent().map(|d| d.to_path_buf())).and_then(walk_up))
+    std::env::current_dir().ok().and_then(walk_up).or_else(|| {
+        std::env::current_exe()
+            .ok()
+            .and_then(|e| e.parent().map(|d| d.to_path_buf()))
+            .and_then(walk_up)
+    })
 }
 
 /// Restaura o terminal se houver panic (senao o shell fica em modo raw/tela alternativa).
@@ -133,7 +135,11 @@ fn spawn_input_reader(tx: mpsc::UnboundedSender<Event>) {
         if crossterm::event::poll(Duration::from_millis(100)).unwrap_or(false) {
             match crossterm::event::read() {
                 Ok(crossterm::event::Event::Key(key))
-                    if matches!(key.kind, crossterm::event::KeyEventKind::Press | crossterm::event::KeyEventKind::Repeat) =>
+                    if matches!(
+                        key.kind,
+                        crossterm::event::KeyEventKind::Press
+                            | crossterm::event::KeyEventKind::Repeat
+                    ) =>
                 {
                     if tx.send(Event::Key(key)).is_err() {
                         break;

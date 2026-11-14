@@ -1,1 +1,1 @@
-Error: Os { code: 6, kind: Uncategorized, message: "No such device or address" }
+musical-lamp-tui precisa de um terminal interativo (TTY); stdin/stdout nao sao um terminal.

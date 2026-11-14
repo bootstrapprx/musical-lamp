@@ -213,9 +213,9 @@ fn draw_apps(f: &mut Frame, area: Rect, state: &AppState) {
     let mut hints = vec![
         Line::from(Span::styled("Contexto para adicionar apps no bench", Style::default().fg(theme::MAUVE).add_modifier(Modifier::BOLD))),
         Line::from(""),
-        Line::from("• Cada app precisa de um repositório Git (URL) e de uma referência fixa (tag ou commit)."),
-        Line::from("• Evite branches móveis (main/master/develop) para builds reprodutíveis."),
-        Line::from("• O bench usa esses dados para instalar os apps no site/produto."),
+        Line::from("• Cada app precisa de um repositório Git (URL) e de uma ref vinculada ao produto ativo."),
+        Line::from("• Ao adicionar, use o dropdown para escolher refs existentes/aguardadas ou criar uma nova."),
+        Line::from("• Prefira referências fixas (tag/commit) para builds reprodutíveis."),
         Line::from(""),
     ];
     if let Some(ops) = state.current_ops() {

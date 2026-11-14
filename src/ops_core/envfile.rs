@@ -218,7 +218,10 @@ impl EnvFile {
         if target.exists() {
             let _ = backup(&target);
         }
-        let name = target.file_name().and_then(|n| n.to_str()).unwrap_or(".env");
+        let name = target
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(".env");
         let tmp = target.with_file_name(format!("{name}.kodoo-tmp"));
         write_private(&tmp, self.to_text().as_bytes()).map_err(|e| e.to_string())?;
         fs::rename(&tmp, &target).map_err(|e| e.to_string())?;
