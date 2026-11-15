@@ -230,19 +230,36 @@ pub fn draw(f: &mut Frame, area: Rect, state: &AppState) {
     );
     f.render_widget(detail_p, right[0]);
 
+    let missing = state.missing_env_vars();
+    let error_count = env
+        .findings
+        .iter()
+        .filter(|f| f.starts_with("Error"))
+        .count();
+
     let mut lines = vec![Line::from(Span::styled(
         "Validação e dicas",
         Style::default()
             .fg(theme::MAUVE)
             .add_modifier(Modifier::BOLD),
     ))];
+    if error_count > 0 || !missing.is_empty() {
+        lines.push(Line::from(Span::styled(
+            format!(
+                "Configurações ausentes/erros: {} erro(s), {} variável(is) ausente(s). Pressione [m] para listar.",
+                error_count,
+                missing.len()
+            ),
+            Style::default().fg(theme::RED).add_modifier(Modifier::BOLD),
+        )));
+    }
     if env.findings.is_empty() {
         lines.push(Line::from(Span::styled(
             "Sem alertas conhecidos.",
             Style::default().fg(theme::GREEN),
         )));
     } else {
-        for fnd in env.findings.iter().take(9) {
+        for fnd in env.findings.iter().take(7) {
             let color = if fnd.starts_with("Error") {
                 theme::RED
             } else if fnd.starts_with("Warn") {
@@ -255,22 +272,88 @@ pub fn draw(f: &mut Frame, area: Rect, state: &AppState) {
                 Style::default().fg(color),
             )));
         }
-        if env.findings.len() > 9 {
+        if env.findings.len() > 7 {
             lines.push(Line::from(Span::styled(
-                format!("… +{} itens", env.findings.len() - 9),
+                format!("… +{} itens", env.findings.len() - 7),
                 Style::default().fg(theme::SUBTEXT),
             )));
         }
     }
     lines.push(Line::from(""));
     lines.push(Line::from(
-        "[g] exemplo  [r] recarregar  [w] salvar  [n] segredo  [v] revelar",
+        "[g] exemplo [r] recarregar [w] salvar [n] segredo [v] revelar [m] ausentes",
     ));
+    if state.env_missing_open {
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "Dropdown — variáveis ausentes (↑/↓ Enter seleciona, Esc fecha):",
+            Style::default()
+                .fg(theme::YELLOW)
+                .add_modifier(Modifier::BOLD),
+        )));
+        if missing.is_empty() {
+            lines.push(Line::from(Span::styled(
+                "  Nenhuma variável ausente.",
+                Style::default().fg(theme::GREEN),
+            )));
+        } else {
+            for (i, key) in missing.iter().enumerate().take(12) {
+                let selected = i == state.env_missing_selected;
+                let reason = env
+                    .vars
+                    .iter()
+                    .find(|v| &v.key == key)
+                    .map(|v| {
+                        if v.value.trim().is_empty() {
+                            "valor ausente"
+                        } else {
+                            "erro de configuração"
+                        }
+                    })
+                    .unwrap_or("chave ausente no .env");
+                lines.push(Line::from(vec![
+                    Span::styled(
+                        if selected { "› " } else { "  " },
+                        Style::default().fg(if selected { theme::BLUE } else { theme::SUBTEXT }),
+                    ),
+                    Span::styled(
+                        key.to_string(),
+                        Style::default()
+                            .fg(if selected { theme::BLUE } else { theme::PEACH })
+                            .add_modifier(if selected {
+                                Modifier::BOLD
+                            } else {
+                                Modifier::empty()
+                            }),
+                    ),
+                    Span::styled(
+                        format!(" — {reason}"),
+                        Style::default().fg(theme::SUBTEXT),
+                    ),
+                ]));
+            }
+            if missing.len() > 12 {
+                lines.push(Line::from(Span::styled(
+                    format!("  … +{} itens", missing.len() - 12),
+                    Style::default().fg(theme::SUBTEXT),
+                )));
+            }
+        }
+    }
     let help_p = Paragraph::new(lines).wrap(Wrap { trim: true }).block(
         Block::default()
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
-            .title("Validação & Ações"),
+            .border_style(Style::default().fg(if state.env_missing_open {
+                theme::YELLOW
+            } else {
+                theme::OVERLAY
+            }))
+            .title(if state.env_missing_open {
+                "Validação & Variáveis ausentes"
+            } else {
+                "Validação & Ações"
+            }),
     );
     f.render_widget(help_p, right[1]);
 }

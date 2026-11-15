@@ -215,8 +215,10 @@ fn draw_footer(f: &mut Frame, area: ratatui::layout::Rect, state: &AppState) {
                 BridgePanel::Env => {
                     if state.env_editing {
                         "[Enter] Salvar valor | [Esc] Cancelar"
+                    } else if state.env_missing_open {
+                        "[↑/↓] Selecionar ausente | [Enter] Ir para variável | [Esc/m] Fechar lista | [q] Quit"
                     } else {
-                        "[↑/↓] Variável | [Enter] Editar | [g] Gerar do exemplo | [w] Salvar .env | [R] Reset .env | [N] Novo produto | [L] Recarregar produtos | [Tab] Tunnel | [1-3] Views | [q] Quit"
+                        "[↑/↓] Variável | [Enter] Editar | [m] Variáveis ausentes | [g] Gerar do exemplo | [w] Salvar .env | [R] Reset .env | [Tab] Tunnel | [q] Quit"
                     }
                 }
                 BridgePanel::Tunnel => "[Tab] Env | [1-3] Views | [q] Quit",

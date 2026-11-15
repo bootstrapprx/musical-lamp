@@ -262,6 +262,8 @@ pub struct AppState {
     pub env_selected: usize,
     pub env_editing: bool,
     pub env_input: String,
+    pub env_missing_open: bool,
+    pub env_missing_selected: usize,
     pub ops_states: HashMap<Product, OpsStatus>,
     pub ops_selected_action: usize,
     pub preflight: Vec<PreflightCheck>,
@@ -339,6 +341,8 @@ impl AppState {
             env_selected: 0,
             env_editing: false,
             env_input: String::new(),
+            env_missing_open: false,
+            env_missing_selected: 0,
             ops_states,
             ops_selected_action: 0,
             preflight: Vec::new(),
@@ -385,6 +389,86 @@ impl AppState {
     }
     pub fn current_env_mut(&mut self) -> Option<&mut ProductEnv> {
         self.env_states.get_mut(&self.featured_product)
+    }
+
+    /// Lista variáveis ausentes/problemáticas para navegação rápida no painel Env.
+    /// Inclui: chaves obrigatórias vazias/ausentes e chaves com achados de erro.
+    pub fn missing_env_vars(&self) -> Vec<String> {
+        let Some(env) = self.current_env() else {
+            return Vec::new();
+        };
+        let required = [
+            "IMAGE_REF",
+            "DB_PASSWORD",
+            "TUNNEL_TOKEN",
+            "EDGE_SUBNET",
+            "EDGE_IP_RANGE",
+            "CLOUDFLARED_IP",
+        ];
+        let mut out: Vec<String> = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        let var_keys: std::collections::HashSet<String> =
+            env.vars.iter().map(|v| v.key.clone()).collect();
+
+        for k in required {
+            let missing = match env.vars.iter().find(|v| v.key == k) {
+                Some(v) => v.value.trim().is_empty(),
+                None => true,
+            };
+            if missing && seen.insert(k.to_string()) {
+                out.push(k.to_string());
+            }
+        }
+
+        for f in &env.findings {
+            // formato: "Error|Warn|Info <KEY|-: msg>" ou mensagens com chave embutida
+            let is_error = f.starts_with("Error");
+            if !is_error {
+                continue;
+            }
+            // tenta extrair chave após severidade
+            let rest = f.split_once(' ').map(|x| x.1).unwrap_or("");
+            let key = rest.split(':').next().unwrap_or("").trim();
+            if !key.is_empty()
+                && key != "-"
+                && (var_keys.contains(key) || required.contains(&key))
+                && seen.insert(key.to_string())
+            {
+                out.push(key.to_string());
+            }
+        }
+
+        // drift: chaves do exemplo ausentes no .env (aparecem nos findings como Warn com essa mensagem)
+        for f in &env.findings {
+            if f.contains("existe no .env.example e falta no .env") {
+                let rest = f.split_once(' ').map(|x| x.1).unwrap_or("");
+                let key = rest.split(':').next().unwrap_or("").trim();
+                if !key.is_empty() && key != "-" && seen.insert(key.to_string()) {
+                    out.push(key.to_string());
+                }
+            }
+        }
+
+        out
+    }
+
+    pub fn jump_to_env_key(&mut self, key: &str) {
+        let product = self.featured_product.clone();
+        let Some(env) = self.env_states.get_mut(&product) else {
+            return;
+        };
+        if let Some(idx) = env.vars.iter().position(|v| v.key == key) {
+            self.env_selected = idx;
+        } else {
+            env.vars.push(crate::domain::EnvVar {
+                key: key.to_string(),
+                value: String::new(),
+                comment: Some("adicionada a partir da lista de variáveis ausentes".into()),
+            });
+            self.env_selected = env.vars.len().saturating_sub(1);
+            env.dirty = true;
+            env.last_action = format!("variável ausente adicionada: {key} (preencha e salve)");
+        }
     }
     pub fn current_ops(&self) -> Option<&OpsStatus> {
         self.ops_states.get(&self.featured_product)
@@ -532,6 +616,9 @@ impl AppState {
                 None
             }
             KeyCode::Tab => {
+                if self.view == View::BridgesPlugins && self.bridge_panel == BridgePanel::Env {
+                    self.env_missing_open = false;
+                }
                 if self.view == View::ClusterFinOps {
                     self.focus = match self.focus {
                         FocusPane::Nodes => FocusPane::Containers,
@@ -693,6 +780,46 @@ impl AppState {
                 None
             }
             // Bridges & Plugins env actions
+            KeyCode::Char('m')
+                if self.view == View::BridgesPlugins && self.bridge_panel == BridgePanel::Env =>
+            {
+                let missing = self.missing_env_vars();
+                if missing.is_empty() {
+                    self.env_missing_open = false;
+                    if let Some(env) = self.current_env_mut() {
+                        env.last_action = "nenhuma variável ausente detectada".into();
+                    }
+                } else {
+                    self.env_missing_open = !self.env_missing_open;
+                    if self.env_missing_selected >= missing.len() {
+                        self.env_missing_selected = 0;
+                    }
+                }
+                None
+            }
+            KeyCode::Esc
+                if self.view == View::BridgesPlugins
+                    && self.bridge_panel == BridgePanel::Env
+                    && self.env_missing_open =>
+            {
+                self.env_missing_open = false;
+                None
+            }
+            KeyCode::Enter
+                if self.view == View::BridgesPlugins
+                    && self.bridge_panel == BridgePanel::Env
+                    && self.env_missing_open =>
+            {
+                let missing = self.missing_env_vars();
+                if let Some(key) = missing.get(self.env_missing_selected).cloned() {
+                    self.jump_to_env_key(&key);
+                    if let Some(env) = self.current_env_mut() {
+                        env.last_action = format!("foco na variável ausente: {key}");
+                    }
+                }
+                self.env_missing_open = false;
+                None
+            }
             KeyCode::Enter
                 if self.view == View::BridgesPlugins && self.bridge_panel == BridgePanel::Env =>
             {
@@ -783,8 +910,19 @@ impl AppState {
                 StackPanel::Overview => {}
             },
             View::BridgesPlugins => {
-                if self.bridge_panel == BridgePanel::Env && self.env_selected > 0 {
-                    self.env_selected -= 1;
+                if self.bridge_panel == BridgePanel::Env {
+                    if self.env_missing_open {
+                        let len = self.missing_env_vars().len();
+                        if len > 0 {
+                            self.env_missing_selected = if self.env_missing_selected == 0 {
+                                len - 1
+                            } else {
+                                self.env_missing_selected - 1
+                            };
+                        }
+                    } else if self.env_selected > 0 {
+                        self.env_selected -= 1;
+                    }
                 }
             }
         }
@@ -824,7 +962,12 @@ impl AppState {
             },
             View::BridgesPlugins => {
                 if self.bridge_panel == BridgePanel::Env {
-                    if let Some(env) = self.current_env() {
+                    if self.env_missing_open {
+                        let len = self.missing_env_vars().len();
+                        if len > 0 {
+                            self.env_missing_selected = (self.env_missing_selected + 1) % len;
+                        }
+                    } else if let Some(env) = self.current_env() {
                         if self.env_selected + 1 < env.vars.len() {
                             self.env_selected += 1;
                         }

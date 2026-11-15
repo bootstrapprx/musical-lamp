@@ -1,0 +1,14 @@
+{
+  "id": "unk_9456f75cac3dde8e",
+  "revision": 2,
+  "question": "O que exatamente a imagem anexada (picture-6.png) mostra sobre os dois erros restantes e como deve ser a lista dropdown com as variáveis ausentes?",
+  "severity": "high",
+  "domain": "ui",
+  "status": "resolved",
+  "probes": [
+    "Ler a imagem anexada; o usuário descreveu que há dois erros restantes por ausência de configurações e pediu uma lista dropdown com variáveis ausentes."
+  ],
+  "evidence_for": [],
+  "evidence_against": [],
+  "resolution": "A imagem anexada não pôde ser visualizada aqui, mas o pedido descrito foi implementado: na tela de configurações do ambiente agora aparece o total de erros e de variáveis ausentes, e existe uma lista suspensa para abrir, navegar e ir direto às variáveis ausentes para preenchimento."
+}

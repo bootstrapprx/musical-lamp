@@ -9,7 +9,7 @@
   "status": "ready",
   "note": "Ready: all 2 checks pass.",
   "created_ms": 1794595666281,
-  "updated_ms": 1794767521446,
+  "updated_ms": 1794767993741,
   "checks": [
     {
       "round": 1,
@@ -478,13 +478,31 @@
       "note": "`cargo test --quiet` passed.",
       "artifacts": [],
       "at_ms": 1794767521434
+    },
+    {
+      "round": 27,
+      "check": "build",
+      "passed": true,
+      "similarity": null,
+      "note": "`cargo build --quiet` passed.",
+      "artifacts": [],
+      "at_ms": 1794767992822
+    },
+    {
+      "round": 27,
+      "check": "own-tests",
+      "passed": true,
+      "similarity": null,
+      "note": "`cargo test --quiet` passed.",
+      "artifacts": [],
+      "at_ms": 1794767993731
     }
   ],
   "agent_session": null,
   "agent_session_by": "opencode",
   "capture_deep": true,
   "allowed_actions": [],
-  "last_reply": "Construí e ajustei a interface de terminal completa para orquestrar aplicações em múltiplos servidores com visão de custos: ela abre já demonstrável com um conjunto de servidores de exemplo, atualização contínua de uso e recálculo automático dos custos de cada serviço e da capacidade ociosa a cada momento. A tela principal traz as três áreas pedidas (visão do grupo e finanças, pilhas de aplicações e integrações), com lista de servidores e serviços, painéis de telemetria e finanças, abas de registros, detalhamento de custos, composição e previsão, além de janelas para adicionar e remover servidor com confirmação e impacto financeiro.\n\nMantive as funções de produto que já existiam (ambiente, operações e diagnósticos) integradas, mas a gestão multi-servidor exibida funciona em modo simulado para demonstração, sem conexão remota real por SSH nem orquestração ao vivo em máquinas diferentes. O que pode variar conforme o ambiente local são as operações reais de containers e alguns dados de produtos, que dependem do que estiver configurado na sua máquina.\n\nSe quiser, no próximo passo posso ligar essa visão a servidores e pilhas reais, ou ajustar os valores de orçamento, nomes de servidores e exemplos para o seu cenário.",
+  "last_reply": "Ajustei a tela de configurações do ambiente para deixar claro quando ainda há erros por falta de configurações, mostrando a quantidade de erros e de variáveis ausentes. Agora você pode abrir uma lista suspensa de variáveis ausentes, navegar por ela e ir direto até a variável que precisa ser preenchida, facilitando corrigir o que está faltando. Mantive o restante da interface e do funcionamento já existentes, apenas melhorando essa parte de identificação e acesso rápido às pendências. Não consegui ver a imagem que você enviou, então pode haver algum detalhe visual específico dela que ainda não esteja exatamente igual ao que você imaginou. Se quiser, no próximo passo posso ajustar essa lista (por exemplo, o texto de cada item ou onde ela aparece na tela) conforme o que você esperava ver.",
   "asset_budget_usd": 5.0,
   "generate_assets": false,
   "app_in_root": true,
