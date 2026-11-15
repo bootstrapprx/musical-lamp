@@ -119,7 +119,7 @@ fn draw_field(f: &mut Frame, area: Rect, label: &str, value: &str, active: bool)
 }
 
 pub fn draw_drop_node(f: &mut Frame, area: Rect, state: &AppState, confirm: bool) {
-    let area = layout::centered_rect(58, 40, area);
+    let area = layout::centered_rect(60, 48, area);
     f.render_widget(Clear, area);
     f.render_widget(
         Block::default().style(Style::default().bg(theme::MANTLE)),
@@ -133,18 +133,19 @@ pub fn draw_drop_node(f: &mut Frame, area: Rect, state: &AppState, confirm: bool
     let inner = block.inner(area);
     f.render_widget(block, area);
 
-    let (name, cost, count) = if let Some(n) = state.selected_node() {
-        let c = state
+    let (name, cost, to_move): (String, f64, Vec<String>) = if let Some(n) = state.selected_node() {
+        let names = state
             .containers
             .iter()
             .filter(|c| c.node_id == n.id)
-            .count();
-        (n.display_name(), n.monthly_cost, c)
+            .map(|c| c.name.clone())
+            .collect();
+        (n.display_name(), n.monthly_cost, names)
     } else {
-        ("(nenhum nó)".into(), 0.0, 0)
+        ("(nenhum nó)".into(), 0.0, vec![])
     };
     let after = (state.projected_total() - cost).max(0.0);
-    let msg = vec![
+    let mut msg = vec![
         Line::from(Span::styled(
             "Confirmar remoção segura do nó selecionado?",
             Style::default()
@@ -152,49 +153,71 @@ pub fn draw_drop_node(f: &mut Frame, area: Rect, state: &AppState, confirm: bool
                 .add_modifier(Modifier::BOLD),
         )),
         Line::from(format!("Nó: {name}  |  Custo fixo: ${cost:.2}/mo")),
-        Line::from(format!("Containers que precisarão realocação: {count}")),
         Line::from(format!(
             "Impacto: orçamento projetado ${:.2} -> ${:.2}/mo",
             state.projected_total(),
             after
         )),
-        Line::from(""),
-        Line::from(vec![
-            Span::styled(
-                if confirm {
-                    "[ Confirmar ]"
-                } else {
-                    "  Confirmar  "
-                },
-                Style::default()
-                    .fg(if confirm { theme::BASE } else { theme::GREEN })
-                    .bg(if confirm { theme::GREEN } else { theme::MANTLE }),
-            ),
-            Span::raw("   "),
-            Span::styled(
-                if !confirm {
-                    "[ Cancelar ]"
-                } else {
-                    "  Cancelar  "
-                },
-                Style::default()
-                    .fg(if !confirm {
-                        theme::BASE
-                    } else {
-                        theme::SUBTEXT
-                    })
-                    .bg(if !confirm {
-                        theme::YELLOW
-                    } else {
-                        theme::MANTLE
-                    }),
-            ),
-        ]),
         Line::from(Span::styled(
-            "Tab/←/→ alterna, Enter confirma, Esc/N cancela",
+            "Containers que precisarão ser realocados antes da exclusão:",
             Style::default().fg(theme::SUBTEXT),
         )),
     ];
+    if to_move.is_empty() {
+        msg.push(Line::from(Span::styled(
+            "  • nenhum container ativo neste nó",
+            Style::default().fg(theme::GREEN),
+        )));
+    } else {
+        for c in to_move.iter().take(6) {
+            msg.push(Line::from(Span::styled(
+                format!("  • {c}"),
+                Style::default().fg(theme::YELLOW),
+            )));
+        }
+        if to_move.len() > 6 {
+            msg.push(Line::from(Span::styled(
+                format!("  • … +{} outros", to_move.len() - 6),
+                Style::default().fg(theme::SUBTEXT),
+            )));
+        }
+    }
+    msg.push(Line::from(""));
+    msg.push(Line::from(vec![
+        Span::styled(
+            if confirm {
+                "[ Confirmar ]"
+            } else {
+                "  Confirmar  "
+            },
+            Style::default()
+                .fg(if confirm { theme::BASE } else { theme::GREEN })
+                .bg(if confirm { theme::GREEN } else { theme::MANTLE }),
+        ),
+        Span::raw("   "),
+        Span::styled(
+            if !confirm {
+                "[ Cancelar ]"
+            } else {
+                "  Cancelar  "
+            },
+            Style::default()
+                .fg(if !confirm {
+                    theme::BASE
+                } else {
+                    theme::SUBTEXT
+                })
+                .bg(if !confirm {
+                    theme::YELLOW
+                } else {
+                    theme::MANTLE
+                }),
+        ),
+    ]));
+    msg.push(Line::from(Span::styled(
+        "Tab/←/→ alterna, Enter/y confirma, Esc/n cancela",
+        Style::default().fg(theme::SUBTEXT),
+    )));
     f.render_widget(Paragraph::new(msg).wrap(Wrap { trim: true }), inner);
 }
 

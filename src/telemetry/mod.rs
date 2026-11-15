@@ -171,19 +171,222 @@ fn merge_histories(new_snapshot: &mut Snapshot, prev: &Snapshot) {
     }
 }
 
-#[cfg(test)]
-pub struct MockTelemetryProvider;
+/// Mock realista para demonstração: cria um pool multi-servidor com flutuação orgânica
+/// de CPU/RAM e recálculo dinâmico de custos proporcionais a cada tick (~1s).
+#[derive(Debug, Clone)]
+pub struct MockTelemetryProvider {
+    initialized: bool,
+    t: u64,
+}
 
-#[cfg(test)]
-impl MockTelemetryProvider {
-    pub fn new() -> Self {
-        Self
+impl Default for MockTelemetryProvider {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
-#[cfg(test)]
+impl MockTelemetryProvider {
+    pub fn new() -> Self {
+        Self {
+            initialized: false,
+            t: 0,
+        }
+    }
+
+    fn seed(nodes: &mut Vec<Node>, containers: &mut Vec<Container>) {
+        if !nodes.is_empty() || !containers.is_empty() {
+            return;
+        }
+        *nodes = vec![
+            Node {
+                id: "node-hetzner-hel1".into(),
+                name: "hetzner-hel1".into(),
+                region: "eu".into(),
+                host: "10.0.0.11".into(),
+                ssh_user: "root".into(),
+                provider: "Hetzner".into(),
+                monthly_cost: 13.99,
+                online: true,
+                cpu_pct: 38.0,
+                ram_pct: 46.0,
+                cpu_history: vec![32, 34, 36, 35, 37, 38],
+                ram_history: vec![44, 45, 45, 46, 46, 46],
+            },
+            Node {
+                id: "node-aws-use1".into(),
+                name: "aws-use1".into(),
+                region: "us-east-1".into(),
+                host: "10.0.1.20".into(),
+                ssh_user: "ubuntu".into(),
+                provider: "AWS".into(),
+                monthly_cost: 28.40,
+                online: true,
+                cpu_pct: 61.0,
+                ram_pct: 54.0,
+                cpu_history: vec![55, 57, 58, 60, 59, 61],
+                ram_history: vec![50, 51, 52, 53, 53, 54],
+            },
+            Node {
+                id: "node-do-nyc1".into(),
+                name: "do-nyc1".into(),
+                region: "nyc1".into(),
+                host: "10.0.2.7".into(),
+                ssh_user: "root".into(),
+                provider: "DigitalOcean".into(),
+                monthly_cost: 24.00,
+                online: true,
+                cpu_pct: 22.0,
+                ram_pct: 31.0,
+                cpu_history: vec![18, 19, 21, 20, 22, 22],
+                ram_history: vec![28, 29, 30, 30, 31, 31],
+            },
+        ];
+        *containers = vec![
+            mk_container(
+                "c-hel1-api",
+                "api-gateway",
+                "node-hetzner-hel1",
+                "edge",
+                34.0,
+                28.0,
+            ),
+            mk_container(
+                "c-hel1-web",
+                "web-frontend",
+                "node-hetzner-hel1",
+                "edge",
+                18.0,
+                22.0,
+            ),
+            mk_container(
+                "c-hel1-worker",
+                "jobs-worker",
+                "node-hetzner-hel1",
+                "edge",
+                12.0,
+                16.0,
+            ),
+            mk_container(
+                "c-aws-db",
+                "postgres-primary",
+                "node-aws-use1",
+                "data",
+                30.0,
+                44.0,
+            ),
+            mk_container(
+                "c-aws-api",
+                "billing-api",
+                "node-aws-use1",
+                "billing",
+                26.0,
+                24.0,
+            ),
+            mk_container(
+                "c-aws-cache",
+                "redis-cache",
+                "node-aws-use1",
+                "data",
+                10.0,
+                18.0,
+            ),
+            mk_container(
+                "c-do-analytics",
+                "analytics",
+                "node-do-nyc1",
+                "insights",
+                14.0,
+                20.0,
+            ),
+            mk_container(
+                "c-do-cron",
+                "scheduler",
+                "node-do-nyc1",
+                "insights",
+                6.0,
+                8.0,
+            ),
+        ];
+        for c in containers.iter_mut() {
+            c.logs = sample_logs(&c.name);
+        }
+    }
+
+    fn organic(base: f64, phase: f64, amp: f64, drift: f64) -> f64 {
+        let wave = (phase).sin() * amp + ((phase * 0.7) + 1.3).cos() * (amp * 0.45);
+        (base + wave + drift).clamp(2.0, 97.0)
+    }
+
+    fn push_hist(hist: &mut Vec<u64>, v: f64) {
+        hist.push(v.round().clamp(0.0, 100.0) as u64);
+        if hist.len() > 30 {
+            let drop = hist.len() - 30;
+            hist.drain(0..drop);
+        }
+    }
+}
+
 impl TelemetryProvider for MockTelemetryProvider {
-    fn tick(&mut self, _nodes: &mut Vec<Node>, _containers: &mut Vec<Container>) {}
+    fn tick(&mut self, nodes: &mut Vec<Node>, containers: &mut Vec<Container>) {
+        if !self.initialized {
+            Self::seed(nodes, containers);
+            self.initialized = true;
+        }
+        self.t = self.t.wrapping_add(1);
+        let t = self.t as f64;
+
+        for (i, n) in nodes.iter_mut().enumerate() {
+            if !n.online {
+                n.cpu_pct = 0.0;
+                n.ram_pct = 0.0;
+                Self::push_hist(&mut n.cpu_history, 0.0);
+                Self::push_hist(&mut n.ram_history, 0.0);
+                continue;
+            }
+            let phase = t * 0.35 + i as f64 * 1.7;
+            let drift = ((t * 0.03 + i as f64).sin()) * 2.5;
+            n.cpu_pct = Self::organic(n.cpu_pct.max(8.0), phase, 6.0, drift);
+            n.ram_pct = Self::organic(n.ram_pct.max(10.0), phase + 0.9, 3.5, drift * 0.4);
+            Self::push_hist(&mut n.cpu_history, n.cpu_pct);
+            Self::push_hist(&mut n.ram_history, n.ram_pct);
+        }
+
+        for (j, c) in containers.iter_mut().enumerate() {
+            let phase = t * 0.4 + j as f64 * 0.9;
+            c.cpu_share_pct = Self::organic(c.cpu_share_pct.max(3.0), phase, 4.5, 0.0).min(95.0);
+            c.ram_share_pct =
+                Self::organic(c.ram_share_pct.max(4.0), phase + 0.6, 2.8, 0.0).min(95.0);
+            c.status = "running".into();
+            if self.t.is_multiple_of(5) && c.logs.len() < 120 {
+                c.logs.push(format!(
+                    "[tick {}] {} healthy cpu={:.1}% ram={:.1}%",
+                    self.t, c.name, c.cpu_share_pct, c.ram_share_pct
+                ));
+            }
+        }
+        // custos proporcionais são recalculados dinamicamente pela UI via allocate_costs a cada render
+    }
+}
+
+fn mk_container(id: &str, name: &str, node_id: &str, stack: &str, cpu: f64, ram: f64) -> Container {
+    Container {
+        id: id.into(),
+        name: name.into(),
+        node_id: node_id.into(),
+        stack: stack.into(),
+        cpu_share_pct: cpu,
+        ram_share_pct: ram,
+        status: "running".into(),
+        logs: Vec::new(),
+    }
+}
+
+fn sample_logs(name: &str) -> Vec<String> {
+    vec![
+        format!("[init] {name} started"),
+        format!("[health] {name} readiness ok"),
+        format!("[metrics] {name} exporting telemetry"),
+    ]
 }
 
 #[derive(Debug, Clone)]

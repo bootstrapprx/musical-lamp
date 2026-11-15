@@ -23,7 +23,7 @@ use tokio::sync::mpsc;
 use crate::app::AppState;
 use crate::domain::discover_products;
 use crate::event::{Action, Event};
-use crate::telemetry::{DockerTelemetryProvider, TelemetryProvider};
+use crate::telemetry::{MockTelemetryProvider, TelemetryProvider};
 
 /// Raiz = diretorio que contem common/compose.base.yaml. Ordem: argumento, MUSICAL_LAMP_ROOT,
 /// subindo a partir do cwd e, por fim, a partir do executavel (target/debug/...).
@@ -92,9 +92,9 @@ async fn main() -> io::Result<()> {
     spawn_input_reader(tx.clone());
     spawn_tick(tx.clone());
 
-    let products = discover_products();
-    let provider: Box<dyn TelemetryProvider + Send> =
-        Box::new(DockerTelemetryProvider::new(products));
+    let _products = discover_products();
+    // MockTelemetryProvider: demonstração imediata com pool multi-servidor, flutuação orgânica e custos dinâmicos.
+    let provider: Box<dyn TelemetryProvider + Send> = Box::new(MockTelemetryProvider::new());
     let mut state = AppState::new(provider);
 
     let res = run_app(&mut terminal, &mut state, &mut rx, tx.clone()).await;
