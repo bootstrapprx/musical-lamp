@@ -1,6 +1,7 @@
 mod action;
 mod app;
 mod blueprint;
+mod control_plane;
 mod domain;
 mod event;
 mod ops_core;

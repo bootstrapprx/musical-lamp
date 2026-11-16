@@ -165,6 +165,18 @@ impl StateStore {
             .map_err(StoreError::from)
     }
 
+    pub fn plan_json(&self, deployment_id: &str) -> Result<String, StoreError> {
+        let connection = self.connection.lock().map_err(|_| StoreError::Poisoned)?;
+        connection
+            .query_row(
+                "SELECT plan_json FROM deployments WHERE id = ?1",
+                params![deployment_id],
+                |row| row.get(0),
+            )
+            .optional()?
+            .ok_or_else(|| StoreError::Sql(rusqlite::Error::QueryReturnedNoRows))
+    }
+
     pub fn approve_plan(
         &self,
         deployment_id: &str,
