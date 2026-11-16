@@ -76,6 +76,8 @@ pub fn draw(f: &mut Frame, area: Rect, state: &AppState) {
             "Executa: common/dc.sh <produto> restart",
         ),
         ("[c] Consultar stack", "Executa: common/dc.sh <produto> ps"),
+        ("[P] Provisionar Infra", "Executa: ControlPlane prepare infrastructure"),
+        ("[D] Provisionar DB", "Executa: ControlPlane provision database"),
         ("[f] Pre-flight", "Valida .env, arquivos e prontidão local"),
         (
             "[k] Doctor",

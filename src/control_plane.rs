@@ -13,13 +13,17 @@ pub enum ControlPlaneError {
     NotApproved,
     HostValidationFailed,
     InfrastructureFailed,
+    DatabaseProvisioningFailed,
+    CacheProvisioningFailed,
     RuntimeProvisioningFailed,
 }
+
 impl From<PlanError> for ControlPlaneError {
     fn from(error: PlanError) -> Self {
         Self::Plan(error)
     }
 }
+
 impl From<StoreError> for ControlPlaneError {
     fn from(error: StoreError) -> Self {
         Self::Store(error)
@@ -44,6 +48,7 @@ impl ControlPlane {
             store: Arc::new(store),
         }
     }
+
     pub fn plan_deployment(
         &self,
         deployment_id: &str,
@@ -62,6 +67,7 @@ impl ControlPlane {
             .ok_or_else(|| ControlPlaneError::NotFound(deployment_id.into()))?;
         Ok(PlannedDeployment { plan, record })
     }
+
     pub fn plan(&self, deployment_id: &str) -> Result<DeploymentPlan, ControlPlaneError> {
         self.store
             .deployment(deployment_id)?
@@ -70,12 +76,15 @@ impl ControlPlane {
         serde_json::from_str(&json)
             .map_err(|e| ControlPlaneError::Plan(PlanError::InvalidImageReference(e.to_string())))
     }
+
     pub fn deployment(&self, id: &str) -> Result<Option<DeploymentRecord>, ControlPlaneError> {
         Ok(self.store.deployment(id)?)
     }
+
     pub fn operation(&self, id: &str) -> Result<Option<OperationRecord>, ControlPlaneError> {
         Ok(self.store.operation(id)?)
     }
+
     pub fn approve_deployment(
         &self,
         id: &str,
@@ -85,6 +94,7 @@ impl ControlPlane {
         self.store.approve_plan(id, hash, actor)?;
         Ok(())
     }
+
     pub fn begin_execution(&self, id: &str) -> Result<OperationRecord, ControlPlaneError> {
         let deployment = self
             .store
@@ -100,6 +110,7 @@ impl ControlPlane {
             .operation(&operation_id)?
             .ok_or_else(|| ControlPlaneError::NotFound(operation_id))
     }
+
     pub fn execute_prepare_infrastructure(
         &self,
         id: &str,
@@ -123,12 +134,12 @@ impl ControlPlane {
         )?;
 
         let commands = [
-            crate::executor::CommandSpec {
+            CommandSpec {
                 program: "docker".into(),
                 args: vec!["pull".into(), plan.database_image.clone()],
                 working_dir: None,
             },
-            crate::executor::CommandSpec {
+            CommandSpec {
                 program: "docker".into(),
                 args: vec!["pull".into(), plan.cache_image.clone()],
                 working_dir: None,
@@ -218,6 +229,112 @@ impl ControlPlane {
             .ok_or_else(|| ControlPlaneError::NotFound(operation_id))
     }
 
+    pub fn execute_database_provisioning(
+        &self,
+        id: &str,
+        executor: &dyn CommandExecutor,
+    ) -> Result<OperationRecord, ControlPlaneError> {
+        let deployment = self
+            .store
+            .deployment(id)?
+            .ok_or_else(|| ControlPlaneError::NotFound(id.into()))?;
+        if deployment.approval_status != "approved" {
+            return Err(ControlPlaneError::NotApproved);
+        }
+        let plan = self.plan(id)?;
+        let operation_id = format!("database:{id}");
+        self.store
+            .start_operation(&operation_id, id, "database_provisioning")?;
+        self.store
+            .append_event(&operation_id, "running", "database provisioning started")?;
+
+        let command = CommandSpec {
+            program: "docker".into(),
+            args: vec![
+                "run".into(),
+                "-d".into(),
+                "--name".into(),
+                format!("{id}-database"),
+                "--volume".into(),
+                format!("{id}-db-data:/var/lib/mysql"),
+                plan.database_image.clone(),
+            ],
+            working_dir: None,
+        };
+
+        match executor.run(&command, std::time::Duration::from_secs(60)) {
+            Ok(_) => {
+                self.store
+                    .append_event(&operation_id, "succeeded", "database provisioned")?;
+                self.store.finish_operation(&operation_id, "succeeded")?;
+                self.store.set_observed_state(id, "database_ready")?;
+                self.store
+                    .operation(&operation_id)?
+                    .ok_or_else(|| ControlPlaneError::NotFound(operation_id))
+            }
+            Err(_) => {
+                self.store
+                    .append_event(&operation_id, "failed", "database provisioning failed")?;
+                self.store.finish_operation(&operation_id, "failed")?;
+                self.store.set_observed_state(id, "degraded")?;
+                Err(ControlPlaneError::DatabaseProvisioningFailed)
+            }
+        }
+    }
+
+    pub fn execute_cache_provisioning(
+        &self,
+        id: &str,
+        executor: &dyn CommandExecutor,
+    ) -> Result<OperationRecord, ControlPlaneError> {
+        let deployment = self
+            .store
+            .deployment(id)?
+            .ok_or_else(|| ControlPlaneError::NotFound(id.into()))?;
+        if deployment.approval_status != "approved" {
+            return Err(ControlPlaneError::NotApproved);
+        }
+        let plan = self.plan(id)?;
+        let operation_id = format!("cache:{id}");
+        self.store
+            .start_operation(&operation_id, id, "cache_provisioning")?;
+        self.store
+            .append_event(&operation_id, "running", "cache provisioning started")?;
+
+        let command = CommandSpec {
+            program: "docker".into(),
+            args: vec![
+                "run".into(),
+                "-d".into(),
+                "--name".into(),
+                format!("{id}-cache"),
+                "--volume".into(),
+                format!("{id}-sites:/data"),
+                plan.cache_image.clone(),
+            ],
+            working_dir: None,
+        };
+
+        match executor.run(&command, std::time::Duration::from_secs(60)) {
+            Ok(_) => {
+                self.store
+                    .append_event(&operation_id, "succeeded", "cache provisioned")?;
+                self.store.finish_operation(&operation_id, "succeeded")?;
+                self.store.set_observed_state(id, "cache_ready")?;
+                self.store
+                    .operation(&operation_id)?
+                    .ok_or_else(|| ControlPlaneError::NotFound(operation_id))
+            }
+            Err(_) => {
+                self.store
+                    .append_event(&operation_id, "failed", "cache provisioning failed")?;
+                self.store.finish_operation(&operation_id, "failed")?;
+                self.store.set_observed_state(id, "degraded")?;
+                Err(ControlPlaneError::CacheProvisioningFailed)
+            }
+        }
+    }
+
     pub fn execute_host_validation(
         &self,
         id: &str,
@@ -259,6 +376,7 @@ mod tests {
     use super::*;
     use crate::executor::{CommandResult, ExecutorError, FakeExecutor};
     use crate::registry::AppRegistry;
+
     fn registry() -> AppRegistry {
         AppRegistry::from_yaml(r#"
 api_version: musical-lamp/v1
@@ -268,6 +386,7 @@ apps:
   - { id: erpnext, name: ERPNext, kind: application, source: { repository: https://github.com/frappe/erpnext.git, ref: v16.9.1, resolved_commit: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb }, dependencies: [], compatibility: { framework: frappe, framework_major: "16" }, installation: { order: 10 }, configuration: { fields: [] } }
 "#).unwrap()
     }
+
     fn blueprint() -> ProductBlueprint {
         ProductBlueprint::from_yaml(r#"
 api_version: musical-lamp/v1
@@ -282,6 +401,7 @@ runtime:
   cache: { engine: redis, image: redis@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb }
 "#).unwrap()
     }
+
     fn approved_control() -> ControlPlane {
         let c = ControlPlane::new(registry(), StateStore::open_in_memory().unwrap());
         let p = c.plan_deployment("deployment-1", &blueprint()).unwrap();
@@ -289,6 +409,7 @@ runtime:
             .unwrap();
         c
     }
+
     #[test]
     fn creates_and_approves_a_persisted_plan() {
         let c = approved_control();
@@ -300,6 +421,7 @@ runtime:
             "approved"
         );
     }
+
     #[test]
     fn refuses_execution_until_matching_plan_is_approved() {
         let c = ControlPlane::new(registry(), StateStore::open_in_memory().unwrap());
@@ -313,6 +435,7 @@ runtime:
             .unwrap();
         assert_eq!(c.begin_execution("deployment-1").unwrap().status, "queued");
     }
+
     #[test]
     fn executes_host_validation_and_persists_success_events() {
         let c = approved_control();
@@ -347,6 +470,7 @@ runtime:
             "ready"
         );
     }
+
     #[test]
     fn prepares_infrastructure_from_persisted_plan_and_updates_observed_state() {
         let c = approved_control();
@@ -498,6 +622,145 @@ runtime:
         ));
         assert_eq!(
             c.operation("host:deployment-1").unwrap().unwrap().status,
+            "failed"
+        );
+        assert_eq!(
+            c.deployment("deployment-1")
+                .unwrap()
+                .unwrap()
+                .observed_state,
+            "degraded"
+        );
+    }
+
+    // Database provisioning tests
+    #[test]
+    fn provisions_database_container_from_plan() {
+        let c = approved_control();
+        let e = FakeExecutor::default();
+        e.respond(
+            "docker",
+            Ok(CommandResult {
+                status: 0,
+                stdout: String::new(),
+                stderr: String::new(),
+            }),
+        );
+        let op = c.execute_database_provisioning("deployment-1", &e).unwrap();
+        assert_eq!(op.status, "succeeded");
+        let calls = e.calls.lock().unwrap();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].program, "docker");
+        assert_eq!(
+            calls[0].args,
+            vec![
+                "run",
+                "-d",
+                "--name",
+                "deployment-1-database",
+                "--volume",
+                "deployment-1-db-data:/var/lib/mysql",
+                "mariadb@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            ]
+        );
+        assert_eq!(
+            c.deployment("deployment-1")
+                .unwrap()
+                .unwrap()
+                .observed_state,
+            "database_ready"
+        );
+    }
+
+    #[test]
+    fn database_provisioning_failure_is_persisted() {
+        let c = approved_control();
+        let e = FakeExecutor::default();
+        e.respond(
+            "docker",
+            Err(ExecutorError::Failed(CommandResult {
+                status: 1,
+                stdout: String::new(),
+                stderr: "database creation failed".into(),
+            })),
+        );
+        assert!(matches!(
+            c.execute_database_provisioning("deployment-1", &e),
+            Err(ControlPlaneError::DatabaseProvisioningFailed)
+        ));
+        assert_eq!(
+            c.operation("database:deployment-1")
+                .unwrap()
+                .unwrap()
+                .status,
+            "failed"
+        );
+        assert_eq!(
+            c.deployment("deployment-1")
+                .unwrap()
+                .unwrap()
+                .observed_state,
+            "degraded"
+        );
+    }
+
+    // Cache provisioning tests
+    #[test]
+    fn provisions_cache_container_from_plan() {
+        let c = approved_control();
+        let e = FakeExecutor::default();
+        e.respond(
+            "docker",
+            Ok(CommandResult {
+                status: 0,
+                stdout: String::new(),
+                stderr: String::new(),
+            }),
+        );
+        let op = c.execute_cache_provisioning("deployment-1", &e).unwrap();
+        assert_eq!(op.status, "succeeded");
+        let calls = e.calls.lock().unwrap();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].program, "docker");
+        assert_eq!(
+            calls[0].args,
+            vec![
+                "run",
+                "-d",
+                "--name",
+                "deployment-1-cache",
+                "--volume",
+                "deployment-1-sites:/data",
+                "redis@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+            ]
+        );
+        assert_eq!(
+            c.deployment("deployment-1")
+                .unwrap()
+                .unwrap()
+                .observed_state,
+            "cache_ready"
+        );
+    }
+
+    #[test]
+    fn cache_provisioning_failure_is_persisted() {
+        let c = approved_control();
+        let e = FakeExecutor::default();
+        e.respond(
+            "docker",
+            Err(ExecutorError::Failed(CommandResult {
+                status: 1,
+                stdout: String::new(),
+                stderr: "cache creation failed".into(),
+            })),
+        );
+        assert!(matches!(
+            c.execute_cache_provisioning("deployment-1", &e),
+            Err(ControlPlaneError::CacheProvisioningFailed)
+        ));
+        assert_eq!(
+            c.operation("cache:deployment-1").unwrap().unwrap().status,
             "failed"
         );
         assert_eq!(
