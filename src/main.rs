@@ -4,6 +4,7 @@ mod blueprint;
 mod control_plane;
 mod domain;
 mod event;
+mod executor;
 mod ops_core;
 mod orchestration;
 mod planner;
