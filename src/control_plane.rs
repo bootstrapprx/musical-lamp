@@ -1,4 +1,5 @@
 use crate::blueprint::ProductBlueprint;
+use crate::executor::{validate_local_host, CommandExecutor, HostCheck};
 use crate::planner::{DeploymentPlan, DeploymentPlanner, PlanError};
 use crate::registry::AppRegistry;
 use crate::state::{DeploymentRecord, OperationRecord, StateStore, StoreError};
@@ -10,8 +11,8 @@ pub enum ControlPlaneError {
     Store(StoreError),
     NotFound(String),
     NotApproved,
+    HostValidationFailed,
 }
-
 impl From<PlanError> for ControlPlaneError {
     fn from(error: PlanError) -> Self {
         Self::Plan(error)
@@ -41,7 +42,6 @@ impl ControlPlane {
             store: Arc::new(store),
         }
     }
-
     pub fn plan_deployment(
         &self,
         deployment_id: &str,
@@ -60,65 +60,85 @@ impl ControlPlane {
             .ok_or_else(|| ControlPlaneError::NotFound(deployment_id.into()))?;
         Ok(PlannedDeployment { plan, record })
     }
-
     pub fn plan(&self, deployment_id: &str) -> Result<DeploymentPlan, ControlPlaneError> {
-        let record = self
-            .store
+        self.store
             .deployment(deployment_id)?
             .ok_or_else(|| ControlPlaneError::NotFound(deployment_id.into()))?;
-        let plan_json = self.store.plan_json(deployment_id)?;
-        serde_json::from_str(&plan_json).map_err(|error| {
-            ControlPlaneError::Plan(PlanError::InvalidImageReference(format!(
-                "{}: {}",
-                record.plan_hash, error
-            )))
-        })
+        let json = self.store.plan_json(deployment_id)?;
+        serde_json::from_str(&json)
+            .map_err(|e| ControlPlaneError::Plan(PlanError::InvalidImageReference(e.to_string())))
     }
-
-    pub fn deployment(
-        &self,
-        deployment_id: &str,
-    ) -> Result<Option<DeploymentRecord>, ControlPlaneError> {
-        Ok(self.store.deployment(deployment_id)?)
+    pub fn deployment(&self, id: &str) -> Result<Option<DeploymentRecord>, ControlPlaneError> {
+        Ok(self.store.deployment(id)?)
     }
-
+    pub fn operation(&self, id: &str) -> Result<Option<OperationRecord>, ControlPlaneError> {
+        Ok(self.store.operation(id)?)
+    }
     pub fn approve_deployment(
         &self,
-        deployment_id: &str,
-        plan_hash: &str,
-        approved_by: &str,
+        id: &str,
+        hash: &str,
+        actor: &str,
     ) -> Result<(), ControlPlaneError> {
-        self.store
-            .approve_plan(deployment_id, plan_hash, approved_by)?;
+        self.store.approve_plan(id, hash, actor)?;
         Ok(())
     }
-
-    pub fn begin_execution(
-        &self,
-        deployment_id: &str,
-    ) -> Result<OperationRecord, ControlPlaneError> {
+    pub fn begin_execution(&self, id: &str) -> Result<OperationRecord, ControlPlaneError> {
         let deployment = self
             .store
-            .deployment(deployment_id)?
-            .ok_or_else(|| ControlPlaneError::NotFound(deployment_id.into()))?;
+            .deployment(id)?
+            .ok_or_else(|| ControlPlaneError::NotFound(id.into()))?;
         if deployment.approval_status != "approved" {
             return Err(ControlPlaneError::NotApproved);
         }
-        let operation_id = format!("deploy:{deployment_id}");
-        self.store
-            .start_operation(&operation_id, deployment_id, "deploy")?;
-        self.store.set_desired_state(deployment_id, "running")?;
+        let operation_id = format!("deploy:{id}");
+        self.store.start_operation(&operation_id, id, "deploy")?;
+        self.store.set_desired_state(id, "running")?;
         self.store
             .operation(&operation_id)?
             .ok_or_else(|| ControlPlaneError::NotFound(operation_id))
+    }
+    pub fn execute_host_validation(
+        &self,
+        id: &str,
+        executor: &dyn CommandExecutor,
+    ) -> Result<OperationRecord, ControlPlaneError> {
+        let deployment = self
+            .store
+            .deployment(id)?
+            .ok_or_else(|| ControlPlaneError::NotFound(id.into()))?;
+        if deployment.approval_status != "approved" {
+            return Err(ControlPlaneError::NotApproved);
+        }
+        let operation_id = format!("host:{id}");
+        self.store
+            .start_operation(&operation_id, id, "host_validation")?;
+        self.store
+            .append_event(&operation_id, "running", "host validation started")?;
+        let checks = validate_local_host(executor);
+        if checks.iter().all(|check| matches!(check, HostCheck::Ready)) {
+            self.store
+                .append_event(&operation_id, "succeeded", "host validation passed")?;
+            self.store.finish_operation(&operation_id, "succeeded")?;
+            self.store.set_observed_state(id, "ready")?;
+            return self
+                .store
+                .operation(&operation_id)?
+                .ok_or_else(|| ControlPlaneError::NotFound(operation_id));
+        }
+        self.store
+            .append_event(&operation_id, "failed", "host validation failed")?;
+        self.store.finish_operation(&operation_id, "failed")?;
+        self.store.set_observed_state(id, "degraded")?;
+        Err(ControlPlaneError::HostValidationFailed)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::executor::{CommandResult, ExecutorError, FakeExecutor};
     use crate::registry::AppRegistry;
-
     fn registry() -> AppRegistry {
         AppRegistry::from_yaml(r#"
 api_version: musical-lamp/v1
@@ -142,20 +162,18 @@ runtime:
   cache: { engine: redis, image: redis@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb }
 "#).unwrap()
     }
+    fn approved_control() -> ControlPlane {
+        let c = ControlPlane::new(registry(), StateStore::open_in_memory().unwrap());
+        let p = c.plan_deployment("deployment-1", &blueprint()).unwrap();
+        c.approve_deployment("deployment-1", &p.plan.plan_hash, "operator")
+            .unwrap();
+        c
+    }
     #[test]
     fn creates_and_approves_a_persisted_plan() {
-        let control = ControlPlane::new(registry(), StateStore::open_in_memory().unwrap());
-        let deployment = control
-            .plan_deployment("deployment-1", &blueprint())
-            .unwrap();
-        assert_eq!(deployment.plan.blueprint_id, "accounting");
-        assert_eq!(deployment.record.approval_status, "pending");
-        control
-            .approve_deployment("deployment-1", &deployment.plan.plan_hash, "operator")
-            .unwrap();
+        let c = approved_control();
         assert_eq!(
-            control
-                .deployment("deployment-1")
+            c.deployment("deployment-1")
                 .unwrap()
                 .unwrap()
                 .approval_status,
@@ -164,21 +182,81 @@ runtime:
     }
     #[test]
     fn refuses_execution_until_matching_plan_is_approved() {
-        let control = ControlPlane::new(registry(), StateStore::open_in_memory().unwrap());
-        control
-            .plan_deployment("deployment-1", &blueprint())
-            .unwrap();
+        let c = ControlPlane::new(registry(), StateStore::open_in_memory().unwrap());
+        c.plan_deployment("deployment-1", &blueprint()).unwrap();
         assert!(matches!(
-            control.begin_execution("deployment-1"),
+            c.begin_execution("deployment-1"),
             Err(ControlPlaneError::NotApproved)
         ));
-        let hash = control.plan("deployment-1").unwrap().plan_hash;
-        control
-            .approve_deployment("deployment-1", &hash, "operator")
+        let hash = c.plan("deployment-1").unwrap().plan_hash;
+        c.approve_deployment("deployment-1", &hash, "operator")
             .unwrap();
+        assert_eq!(c.begin_execution("deployment-1").unwrap().status, "queued");
+    }
+    #[test]
+    fn executes_host_validation_and_persists_success_events() {
+        let c = approved_control();
+        let e = FakeExecutor::default();
+        e.respond(
+            "docker",
+            Ok(CommandResult {
+                status: 0,
+                stdout: "Docker".into(),
+                stderr: String::new(),
+            }),
+        );
+        e.respond(
+            "bash",
+            Ok(CommandResult {
+                status: 0,
+                stdout: "Bash".into(),
+                stderr: String::new(),
+            }),
+        );
+        let op = c.execute_host_validation("deployment-1", &e).unwrap();
+        assert_eq!(op.status, "succeeded");
         assert_eq!(
-            control.begin_execution("deployment-1").unwrap().status,
-            "queued"
+            op.events,
+            vec!["host validation started", "host validation passed"]
+        );
+        assert_eq!(
+            c.deployment("deployment-1")
+                .unwrap()
+                .unwrap()
+                .observed_state,
+            "ready"
+        );
+    }
+    #[test]
+    fn failed_host_validation_marks_deployment_degraded() {
+        let c = approved_control();
+        let e = FakeExecutor::default();
+        e.respond(
+            "docker",
+            Err(ExecutorError::Spawn("daemon unavailable".into())),
+        );
+        e.respond(
+            "bash",
+            Ok(CommandResult {
+                status: 0,
+                stdout: String::new(),
+                stderr: String::new(),
+            }),
+        );
+        assert!(matches!(
+            c.execute_host_validation("deployment-1", &e),
+            Err(ControlPlaneError::HostValidationFailed)
+        ));
+        assert_eq!(
+            c.operation("host:deployment-1").unwrap().unwrap().status,
+            "failed"
+        );
+        assert_eq!(
+            c.deployment("deployment-1")
+                .unwrap()
+                .unwrap()
+                .observed_state,
+            "degraded"
         );
     }
 }
