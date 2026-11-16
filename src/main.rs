@@ -7,6 +7,7 @@ mod ops_core;
 mod orchestration;
 mod planner;
 mod registry;
+mod state;
 mod telemetry;
 mod ui;
 
