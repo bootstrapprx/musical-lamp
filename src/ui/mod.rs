@@ -188,8 +188,8 @@ fn draw_bridges(f: &mut Frame, area: ratatui::layout::Rect, state: &AppState) {
 
 fn draw_footer(f: &mut Frame, area: ratatui::layout::Rect, state: &AppState) {
     let text = match &state.modal {
-        Modal::AddNode(_) => "[Tab] Campo | [Enter] Confirmar | [Esc] Cancelar",
-        Modal::DropNode { .. } => "[Tab/←/→] Alternar | [Enter/y] Confirmar | [Esc/n] Cancelar",
+        Modal::AddNode(_) => "[Tab] Campo seguinte | [Enter] Confirmar | [Esc] Cancelar",
+        Modal::DropNode { .. } => "[Tab/←/→] Alternar | [Enter/y] Confirmar remoção | [Esc/n] Cancelar",
         Modal::AddApp(form) => {
             if form.field == crate::app::AppField::Ref {
                 "[↑/↓] Selecionar ref | [Espaço/Enter] Abrir/confirmar | [Ctrl+n] Nova ref | [Tab] Campo | [Esc] Fechar"

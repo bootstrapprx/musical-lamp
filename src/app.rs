@@ -337,6 +337,7 @@ impl AppState {
             containers,
             selected_node: 0,
             selected_container: 0,
+            // orçamento global inicial; recalculado automaticamente ao adicionar/remover nós
             budget: 100.0,
             telemetry,
             log_scroll: 0,
@@ -363,6 +364,22 @@ impl AppState {
         };
         s.refresh_onboarding();
         s.run_doctor_scan(false);
+        // Automatiza onboarding inicial: pré-checagem leve e abertura do guia quando houver pendências.
+        s.run_preflight();
+        let onboarding_incomplete = s.onboarding_steps.iter().any(|st| !st.done);
+        s.show_onboarding = onboarding_incomplete;
+        // Se faltar .env mas houver exemplo, tenta gerar automaticamente (não destrutivo) para acelerar a configuração.
+        if onboarding_incomplete {
+            let product = s.featured_product.clone();
+            let env_path = Path::new("products").join(product.label()).join(".env");
+            let example_path = Path::new("products")
+                .join(product.label())
+                .join(".env.example");
+            if !env_path.exists() && example_path.exists() {
+                s.generate_env_from_example_for(&product, true);
+                s.refresh_onboarding();
+            }
+        }
         s
     }
 
@@ -2164,10 +2181,15 @@ impl AppState {
                     } else {
                         form.name.trim().to_string()
                     };
+                    let region = form.host.trim();
                     self.nodes.push(Node {
                         id: format!("n{idx}"),
                         name,
-                        region: "custom".into(),
+                        region: if region.is_empty() {
+                            "custom".into()
+                        } else {
+                            region.to_string()
+                        },
                         host: form.host.trim().to_string(),
                         ssh_user: form.user.trim().to_string(),
                         provider: form.provider.trim().to_string(),
@@ -2180,6 +2202,11 @@ impl AppState {
                     });
                     self.selected_node = self.nodes.len().saturating_sub(1);
                     self.selected_container = 0;
+                    // recalcula o orçamento global para acompanhar o pool de nós
+                    let projected = self.projected_total();
+                    if self.budget < projected {
+                        self.budget = (projected / 10.0).ceil() * 10.0;
+                    }
                 }
                 self.modal = Modal::None;
             }
@@ -2222,6 +2249,11 @@ impl AppState {
                             self.selected_node = 0;
                         }
                         self.selected_container = 0;
+                        // recalcula orçamento global após remoção do nó
+                        let projected = self.projected_total();
+                        if self.budget > projected * 2.0 && projected > 0.0 {
+                            self.budget = (projected / 10.0).ceil() * 10.0;
+                        }
                     }
                 }
                 self.modal = Modal::None;
