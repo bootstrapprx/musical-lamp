@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://musical-lamp.invalid/schemas/app-registry.schema.json",
+  "title": "Musical Lamp App Registry",
+  "type": "object",
+  "required": ["api_version", "kind", "apps"],
+  "properties": {
+    "api_version": {"const": "musical-lamp/v1"},
+    "kind": {"const": "AppRegistry"},
+    "apps": {"type": "array", "items": {"$ref": "#/$defs/app"}, "uniqueItems": true}
+  },
+  "$defs": {
+    "id": {"type": "string", "pattern": "^[a-z][a-z0-9_-]*$"},
+    "ref": {"type": "string", "minLength": 1, "pattern": "^[^\\s<>]+$"},
+    "classification": {"enum": ["public", "sensitive", "derived", "user_supplied"]},
+    "app": {
+      "type": "object",
+      "required": ["id", "name", "kind", "source", "dependencies", "compatibility", "installation", "configuration"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "name": {"type": "string", "minLength": 1},
+        "kind": {"enum": ["framework", "application"]},
+        "source": {
+          "type": "object",
+          "required": ["repository", "ref"],
+          "properties": {
+            "repository": {"type": "string", "format": "uri"},
+            "ref": {"$ref": "#/$defs/ref"},
+            "resolved_commit": {"$ref": "#/$defs/ref"}
+          },
+          "additionalProperties": false
+        },
+        "dependencies": {"type": "array", "items": {"$ref": "#/$defs/id"}, "uniqueItems": true},
+        "compatibility": {"type": "object", "additionalProperties": true},
+        "installation": {
+          "type": "object",
+          "required": ["order"],
+          "properties": {"order": {"type": "integer", "minimum": 0}},
+          "additionalProperties": false
+        },
+        "build": {"type": "object", "additionalProperties": true},
+        "configuration": {
+          "type": "object",
+          "properties": {
+            "schema": {"type": ["object", "null"]},
+            "fields": {"type": "array", "items": {"$ref": "#/$defs/config_field"}}
+          },
+          "additionalProperties": false
+        },
+        "evidence": {"type": "array", "items": {"type": "object", "required": ["statement"], "additionalProperties": true}}
+      },
+      "additionalProperties": false
+    },
+    "config_field": {
+      "type": "object",
+      "required": ["key", "classification"],
+      "properties": {
+        "key": {"type": "string", "pattern": "^[a-z][a-z0-9_.-]*$"},
+        "classification": {"$ref": "#/$defs/classification"},
+        "required": {"type": "boolean"},
+        "type": {"enum": ["string", "integer", "boolean", "url", "secret_ref"]}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

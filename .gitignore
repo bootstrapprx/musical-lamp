@@ -146,4 +146,5 @@ products/accounting/.env
 
 # backups do TUI
 products/*/apps.json.bak-*
+products/*/.env.bak.*
 products/*/apps.json.tmp

@@ -1,9 +1,15 @@
 mod action;
 mod app;
+mod blueprint;
+mod control_plane;
 mod domain;
 mod event;
+mod executor;
 mod ops_core;
 mod orchestration;
+mod planner;
+mod registry;
+mod state;
 mod telemetry;
 mod ui;
 

@@ -4,11 +4,15 @@ use std::path::Path;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
+use crate::control_plane::ControlPlane;
 use crate::domain::{
     allocate_costs, discover_products, other_product, Container, DoctorFixKind, DoctorIssue,
     DoctorReport, EnvVar, Node, OnboardingStep, OpsStatus, PreflightCheck, PreflightStatus,
     Product, ProductEnv, StackState,
 };
+use crate::registry::AppRegistry;
+use crate::state::StateStore;
+
 use crate::event::{Action, Event};
 use crate::ops_core::{envfile, secrets, validate};
 use crate::orchestration;
@@ -278,6 +282,7 @@ pub struct AppState {
     pub doctor_selected: usize,
     /// Drafts/valores informados na criação de novos produtos (acessíveis mid-session, inclusive para reset)
     pub new_product_drafts: HashMap<String, NewProductDraft>,
+    pub control_plane: ControlPlane,
 }
 
 impl AppState {
@@ -361,6 +366,12 @@ impl AppState {
             doctor: crate::domain::DoctorReport::default(),
             doctor_selected: 0,
             new_product_drafts: HashMap::new(),
+            control_plane: ControlPlane::new(
+                AppRegistry::load(Path::new("apps.yaml")).unwrap_or_else(|_| {
+                    AppRegistry::from_yaml("api_version: musical-lamp/v1\nkind: AppRegistry\napps: []").unwrap()
+                }),
+                StateStore::open(Path::new("deployment.db")).unwrap_or_else(|_| StateStore::open_in_memory().unwrap()),
+            ),
         };
         s.refresh_onboarding();
         s.run_doctor_scan(false);
@@ -1032,7 +1043,7 @@ impl AppState {
             },
             View::ComposeStacks => match self.stack_panel {
                 StackPanel::Operations => {
-                    if self.ops_selected_action < 8 {
+                    if self.ops_selected_action < 10 {
                         self.ops_selected_action += 1;
                     }
                 }
@@ -1218,6 +1229,16 @@ impl AppState {
     fn run_ops_action(&mut self, action: &str) -> Option<Action> {
         let product = self.featured_product.clone();
         match action {
+            "provision_infra" => {
+                let plan = self.control_plane.plan(product.label()).unwrap();
+                self.control_plane.execute_prepare_infrastructure(product.label(), &crate::executor::LocalExecutor).unwrap();
+                return None;
+            }
+            "provision_db" => {
+                let plan = self.control_plane.plan(product.label()).unwrap();
+                self.control_plane.execute_database_provisioning(product.label(), &crate::executor::LocalExecutor).unwrap();
+                return None;
+            }
             "preflight" => {
                 self.run_preflight();
                 self.run_doctor_scan(false);
@@ -1265,10 +1286,12 @@ impl AppState {
             1 => "down",
             2 => "restart",
             3 => "status",
-            4 => "preflight",
-            5 => "doctor",
-            6 => "onboarding",
-            7 => "migrate",
+            4 => "provision_infra",
+            5 => "provision_db",
+            6 => "preflight",
+            7 => "doctor",
+            8 => "onboarding",
+            9 => "migrate",
             _ => "logs",
         };
         self.run_ops_action(action)

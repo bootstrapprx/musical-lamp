@@ -1,0 +1,38 @@
+api_version: musical-lamp/v1
+kind: ProductBlueprint
+metadata:
+  id: trivia
+  name: Trivia
+  revision: 1
+framework:
+  app: frappe
+apps:
+  - app: trivia_sync
+    configuration:
+      qapi_endpoint: https://api.example.invalid
+      qapi_api_key:
+        secret_ref: trivia_qapi_key
+sites:
+  - name: trivia.example.invalid
+    host_name: https://trivia.example.invalid
+runtime:
+  image:
+    policy: build
+    repository: registry.example.invalid/kodoo/trivia
+  database:
+    engine: mariadb
+    image: mariadb@sha256:REPLACE_WITH_VERIFIED_DIGEST
+  cache:
+    engine: redis
+    image: redis@sha256:REPLACE_WITH_VERIFIED_DIGEST
+network:
+  edge_subnet: 172.30.1.0/28
+  edge_ip_range: 172.30.1.8/29
+  cloudflared_ip: 172.30.1.2
+secrets:
+  - ref: db_password
+  - ref: tunnel_token
+  - ref: trivia_qapi_key
+deployment:
+  require_approval: true
+  backup_before_migrate: true
