@@ -12,6 +12,7 @@ pub enum ControlPlaneError {
     NotFound(String),
     NotApproved,
     HostValidationFailed,
+    InfrastructureFailed,
 }
 impl From<PlanError> for ControlPlaneError {
     fn from(error: PlanError) -> Self {
@@ -98,6 +99,64 @@ impl ControlPlane {
             .operation(&operation_id)?
             .ok_or_else(|| ControlPlaneError::NotFound(operation_id))
     }
+    pub fn execute_prepare_infrastructure(
+        &self,
+        id: &str,
+        executor: &dyn CommandExecutor,
+    ) -> Result<OperationRecord, ControlPlaneError> {
+        let deployment = self
+            .store
+            .deployment(id)?
+            .ok_or_else(|| ControlPlaneError::NotFound(id.into()))?;
+        if deployment.approval_status != "approved" {
+            return Err(ControlPlaneError::NotApproved);
+        }
+        let plan = self.plan(id)?;
+        let operation_id = format!("infrastructure:{id}");
+        self.store
+            .start_operation(&operation_id, id, "prepare_infrastructure")?;
+        self.store.append_event(
+            &operation_id,
+            "running",
+            "infrastructure preparation started",
+        )?;
+
+        let commands = [
+            crate::executor::CommandSpec {
+                program: "docker".into(),
+                args: vec!["pull".into(), plan.database_image.clone()],
+                working_dir: None,
+            },
+            crate::executor::CommandSpec {
+                program: "docker".into(),
+                args: vec!["pull".into(), plan.cache_image.clone()],
+                working_dir: None,
+            },
+        ];
+        for command in commands {
+            if executor
+                .run(&command, std::time::Duration::from_secs(30))
+                .is_err()
+            {
+                self.store.append_event(
+                    &operation_id,
+                    "failed",
+                    "infrastructure preparation failed",
+                )?;
+                self.store.finish_operation(&operation_id, "failed")?;
+                self.store.set_observed_state(id, "degraded")?;
+                return Err(ControlPlaneError::InfrastructureFailed);
+            }
+        }
+        self.store
+            .append_event(&operation_id, "succeeded", "infrastructure prepared")?;
+        self.store.finish_operation(&operation_id, "succeeded")?;
+        self.store.set_observed_state(id, "infrastructure_ready")?;
+        self.store
+            .operation(&operation_id)?
+            .ok_or_else(|| ControlPlaneError::NotFound(operation_id))
+    }
+
     pub fn execute_host_validation(
         &self,
         id: &str,
@@ -227,6 +286,73 @@ runtime:
             "ready"
         );
     }
+    #[test]
+    fn prepares_infrastructure_from_persisted_plan_and_updates_observed_state() {
+        let c = approved_control();
+        let e = FakeExecutor::default();
+        e.respond(
+            "docker",
+            Ok(CommandResult {
+                status: 0,
+                stdout: String::new(),
+                stderr: String::new(),
+            }),
+        );
+        let op = c
+            .execute_prepare_infrastructure("deployment-1", &e)
+            .unwrap();
+        assert_eq!(op.status, "succeeded");
+        assert_eq!(
+            op.events,
+            vec![
+                "infrastructure preparation started",
+                "infrastructure prepared"
+            ]
+        );
+        let calls = e.calls.lock().unwrap();
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[0].args[0], "pull");
+        assert_eq!(
+            c.deployment("deployment-1")
+                .unwrap()
+                .unwrap()
+                .observed_state,
+            "infrastructure_ready"
+        );
+    }
+
+    #[test]
+    fn infrastructure_failure_marks_operation_and_deployment_degraded() {
+        let c = approved_control();
+        let e = FakeExecutor::default();
+        e.respond(
+            "docker",
+            Err(ExecutorError::Failed(CommandResult {
+                status: 1,
+                stdout: String::new(),
+                stderr: "pull failed".into(),
+            })),
+        );
+        assert!(matches!(
+            c.execute_prepare_infrastructure("deployment-1", &e),
+            Err(ControlPlaneError::InfrastructureFailed)
+        ));
+        assert_eq!(
+            c.operation("infrastructure:deployment-1")
+                .unwrap()
+                .unwrap()
+                .status,
+            "failed"
+        );
+        assert_eq!(
+            c.deployment("deployment-1")
+                .unwrap()
+                .unwrap()
+                .observed_state,
+            "degraded"
+        );
+    }
+
     #[test]
     fn failed_host_validation_marks_deployment_degraded() {
         let c = approved_control();

@@ -74,14 +74,21 @@ pub struct ProductEntry {
 }
 
 pub fn discover_products() -> Vec<Product> {
-    discover_product_entries()
+    discover_products_at(Path::new("products"))
+}
+
+pub fn discover_products_at(root: &Path) -> Vec<Product> {
+    discover_product_entries_at(root)
         .into_iter()
         .map(|e| e.product)
         .collect()
 }
 
 pub fn discover_product_entries() -> Vec<ProductEntry> {
-    let root = Path::new("products");
+    discover_product_entries_at(Path::new("products"))
+}
+
+pub fn discover_product_entries_at(root: &Path) -> Vec<ProductEntry> {
     let mut entries: Vec<ProductEntry> = fs::read_dir(root)
         .ok()
         .into_iter()
@@ -161,7 +168,7 @@ mod tests {
         fs::write(base.join("products/alpha/apps.json"), "[]\n").unwrap();
         let prev = std::env::current_dir().unwrap();
         std::env::set_current_dir(&base).unwrap();
-        let products = discover_products();
+        let products = discover_products_at(&base.join("products"));
         std::env::set_current_dir(prev).unwrap();
         let _ = fs::remove_dir_all(&base);
         assert_eq!(

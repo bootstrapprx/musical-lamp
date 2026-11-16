@@ -12,6 +12,8 @@ pub struct DeploymentPlan {
     pub compatibility: Vec<CompatibilityCheck>,
     pub image_policy: ImagePlanPolicy,
     pub image_reference: Option<String>,
+    pub database_image: String,
+    pub cache_image: String,
     pub steps: Vec<PlanStep>,
     pub plan_hash: String,
 }
@@ -166,6 +168,8 @@ impl<'a> DeploymentPlanner<'a> {
             compatibility,
             image_policy,
             image_reference,
+            database_image: blueprint.runtime.database.image.clone(),
+            cache_image: blueprint.runtime.cache.image.clone(),
             steps,
             plan_hash: String::new(),
         };
