@@ -1,5 +1,5 @@
 use crate::blueprint::ProductBlueprint;
-use crate::executor::{validate_local_host, CommandExecutor, HostCheck};
+use crate::executor::{validate_local_host, CommandExecutor, CommandSpec, HostCheck};
 use crate::planner::{DeploymentPlan, DeploymentPlanner, PlanError};
 use crate::registry::AppRegistry;
 use crate::state::{DeploymentRecord, OperationRecord, StateStore, StoreError};
@@ -13,6 +13,7 @@ pub enum ControlPlaneError {
     NotApproved,
     HostValidationFailed,
     InfrastructureFailed,
+    RuntimeProvisioningFailed,
 }
 impl From<PlanError> for ControlPlaneError {
     fn from(error: PlanError) -> Self {
@@ -152,6 +153,66 @@ impl ControlPlane {
             .append_event(&operation_id, "succeeded", "infrastructure prepared")?;
         self.store.finish_operation(&operation_id, "succeeded")?;
         self.store.set_observed_state(id, "infrastructure_ready")?;
+        self.store
+            .operation(&operation_id)?
+            .ok_or_else(|| ControlPlaneError::NotFound(operation_id))
+    }
+
+    pub fn execute_runtime_provisioning(
+        &self,
+        id: &str,
+        executor: &dyn CommandExecutor,
+    ) -> Result<OperationRecord, ControlPlaneError> {
+        let deployment = self
+            .store
+            .deployment(id)?
+            .ok_or_else(|| ControlPlaneError::NotFound(id.into()))?;
+        if deployment.approval_status != "approved" {
+            return Err(ControlPlaneError::NotApproved);
+        }
+        let operation_id = format!("runtime:{id}");
+        self.store
+            .start_operation(&operation_id, id, "runtime_provisioning")?;
+        self.store
+            .append_event(&operation_id, "running", "runtime provisioning started")?;
+        let project = format!("musical-lamp-{id}");
+        let commands = [
+            CommandSpec {
+                program: "docker".into(),
+                args: vec!["network".into(), "create".into(), format!("{project}-app")],
+                working_dir: None,
+            },
+            CommandSpec {
+                program: "docker".into(),
+                args: vec![
+                    "volume".into(),
+                    "create".into(),
+                    format!("{project}-db-data"),
+                ],
+                working_dir: None,
+            },
+            CommandSpec {
+                program: "docker".into(),
+                args: vec!["volume".into(), "create".into(), format!("{project}-sites")],
+                working_dir: None,
+            },
+        ];
+        for command in commands {
+            if executor
+                .run(&command, std::time::Duration::from_secs(30))
+                .is_err()
+            {
+                self.store
+                    .append_event(&operation_id, "failed", "runtime provisioning failed")?;
+                self.store.finish_operation(&operation_id, "failed")?;
+                self.store.set_observed_state(id, "degraded")?;
+                return Err(ControlPlaneError::RuntimeProvisioningFailed);
+            }
+        }
+        self.store
+            .append_event(&operation_id, "succeeded", "runtime resources provisioned")?;
+        self.store.finish_operation(&operation_id, "succeeded")?;
+        self.store.set_observed_state(id, "runtime_ready")?;
         self.store
             .operation(&operation_id)?
             .ok_or_else(|| ControlPlaneError::NotFound(operation_id))
@@ -342,6 +403,68 @@ runtime:
                 .unwrap()
                 .unwrap()
                 .status,
+            "failed"
+        );
+        assert_eq!(
+            c.deployment("deployment-1")
+                .unwrap()
+                .unwrap()
+                .observed_state,
+            "degraded"
+        );
+    }
+
+    #[test]
+    fn provisions_runtime_resources_from_deployment_identity() {
+        let c = approved_control();
+        let e = FakeExecutor::default();
+        e.respond(
+            "docker",
+            Ok(CommandResult {
+                status: 0,
+                stdout: String::new(),
+                stderr: String::new(),
+            }),
+        );
+        let operation = c.execute_runtime_provisioning("deployment-1", &e).unwrap();
+        assert_eq!(operation.status, "succeeded");
+        let calls = e.calls.lock().unwrap();
+        assert_eq!(calls.len(), 3);
+        assert_eq!(
+            calls[0].args,
+            vec!["network", "create", "musical-lamp-deployment-1-app"]
+        );
+        assert_eq!(
+            calls[1].args,
+            vec!["volume", "create", "musical-lamp-deployment-1-db-data"]
+        );
+        assert_eq!(
+            c.deployment("deployment-1")
+                .unwrap()
+                .unwrap()
+                .observed_state,
+            "runtime_ready"
+        );
+    }
+
+    #[test]
+    fn runtime_provisioning_failure_is_persisted() {
+        let c = approved_control();
+        let e = FakeExecutor::default();
+        e.respond(
+            "docker",
+            Err(ExecutorError::Failed(CommandResult {
+                status: 1,
+                stdout: String::new(),
+                stderr: "create failed".into(),
+            })),
+        );
+        assert!(matches!(
+            c.execute_runtime_provisioning("deployment-1", &e),
+            Err(ControlPlaneError::RuntimeProvisioningFailed)
+        ));
+        assert_eq!(
+            c.operation("runtime:deployment-1").unwrap().unwrap().status,
             "failed"
         );
         assert_eq!(
