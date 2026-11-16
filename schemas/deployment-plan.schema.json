@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://musical-lamp.invalid/schemas/deployment-plan.schema.json",
+  "title": "Musical Lamp Deployment Plan",
+  "type": "object",
+  "required": ["api_version", "kind", "plan_id", "blueprint", "framework", "applications", "compatibility", "steps"],
+  "properties": {
+    "api_version": {"const": "musical-lamp/v1"},
+    "kind": {"const": "DeploymentPlan"},
+    "plan_id": {"type": "string", "minLength": 1},
+    "blueprint": {"type": "object", "required": ["id", "revision"], "properties": {"id": {"type": "string"}, "revision": {"type": "integer", "minimum": 1}}, "additionalProperties": false},
+    "framework": {"type": "object", "required": ["app", "resolved_commit"], "properties": {"app": {"type": "string"}, "resolved_commit": {"type": "string", "minLength": 1}}, "additionalProperties": false},
+    "applications": {"type": "array", "items": {"type": "object", "required": ["app", "resolved_commit", "install_order"], "properties": {"app": {"type": "string"}, "resolved_commit": {"type": "string", "minLength": 1}, "install_order": {"type": "integer", "minimum": 0}, "dependencies": {"type": "array", "items": {"type": "string"}}}, "additionalProperties": false}},
+    "compatibility": {"type": "object", "required": ["status", "checks"], "properties": {"status": {"enum": ["valid", "blocked", "override_required"]}, "checks": {"type": "array", "items": {"type": "object", "required": ["name", "status"], "properties": {"name": {"type": "string"}, "status": {"enum": ["passed", "failed", "unknown", "overridden"]}, "detail": {"type": "string"}}, "additionalProperties": false}}}, "additionalProperties": false},
+    "image": {"type": "object", "required": ["policy"], "properties": {"policy": {"enum": ["build", "pull"]}, "repository": {"type": "string"}, "reference": {"type": "string"}}, "additionalProperties": false},
+    "steps": {"type": "array", "items": {"type": "object", "required": ["id", "kind"], "properties": {"id": {"type": "string"}, "kind": {"type": "string"}, "depends_on": {"type": "array", "items": {"type": "string"}}, "parameters": {"type": "object", "additionalProperties": true}}, "additionalProperties": false}},
+    "required_secrets": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "preconditions": {"type": "array", "items": {"type": "string"}},
+    "plan_hash": {"type": "string"}
+  },
+  "additionalProperties": false
+}
