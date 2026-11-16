@@ -5,6 +5,7 @@ mod domain;
 mod event;
 mod ops_core;
 mod orchestration;
+mod planner;
 mod registry;
 mod telemetry;
 mod ui;
