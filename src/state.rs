@@ -8,6 +8,8 @@ pub enum StoreError {
     Sql(rusqlite::Error),
     Poisoned,
     ActiveOperation { deployment_id: String },
+    PlanHashMismatch,
+    AlreadyApproved,
 }
 
 impl From<rusqlite::Error> for StoreError {
@@ -33,6 +35,9 @@ pub struct DeploymentRecord {
     pub plan_hash: String,
     pub desired_state: String,
     pub observed_state: String,
+    pub approval_status: String,
+    pub approved_by: Option<String>,
+    pub approval_operation_id: Option<String>,
 }
 
 pub struct StateStore {
@@ -74,6 +79,9 @@ impl StateStore {
                  plan_hash TEXT NOT NULL DEFAULT '',
                  desired_state TEXT NOT NULL DEFAULT 'pending',
                  observed_state TEXT NOT NULL DEFAULT 'unknown',
+                 approval_status TEXT NOT NULL DEFAULT 'pending',
+                 approved_by TEXT,
+                 approval_operation_id TEXT,
                  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
              );
              CREATE TABLE IF NOT EXISTS operations (
@@ -122,6 +130,17 @@ impl StateStore {
             ),
             None => ("{}".into(), String::new()),
         };
+        self.create_deployment_with_metadata(id, blueprint_id, revision, &plan_json, &plan_hash)
+    }
+
+    pub fn create_deployment_with_metadata(
+        &self,
+        id: &str,
+        blueprint_id: &str,
+        revision: u64,
+        plan_json: &str,
+        plan_hash: &str,
+    ) -> Result<(), StoreError> {
         let connection = self.connection.lock().map_err(|_| StoreError::Poisoned)?;
         connection.execute(
             "INSERT INTO deployments(id, blueprint_id, blueprint_revision, plan_json, plan_hash) VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -134,15 +153,46 @@ impl StateStore {
         let connection = self.connection.lock().map_err(|_| StoreError::Poisoned)?;
         connection
             .query_row(
-                "SELECT id, blueprint_id, blueprint_revision, plan_hash, desired_state, observed_state FROM deployments WHERE id = ?1",
+                "SELECT id, blueprint_id, blueprint_revision, plan_hash, desired_state, observed_state, approval_status, approved_by, approval_operation_id FROM deployments WHERE id = ?1",
                 params![id],
                 |row| Ok(DeploymentRecord {
                     id: row.get(0)?, blueprint_id: row.get(1)?, blueprint_revision: row.get::<_, i64>(2)? as u64,
                     plan_hash: row.get(3)?, desired_state: row.get(4)?, observed_state: row.get(5)?,
+                    approval_status: row.get(6)?, approved_by: row.get(7)?, approval_operation_id: row.get(8)?,
                 }),
             )
             .optional()
             .map_err(StoreError::from)
+    }
+
+    pub fn approve_plan(
+        &self,
+        deployment_id: &str,
+        expected_plan_hash: &str,
+        approved_by: &str,
+    ) -> Result<(), StoreError> {
+        let connection = self.connection.lock().map_err(|_| StoreError::Poisoned)?;
+        let (actual_hash, approval_status): (String, String) = connection.query_row(
+            "SELECT plan_hash, approval_status FROM deployments WHERE id = ?1",
+            params![deployment_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+        if approval_status == "approved" {
+            return Err(StoreError::AlreadyApproved);
+        }
+        if actual_hash != expected_plan_hash {
+            return Err(StoreError::PlanHashMismatch);
+        }
+        let operation_id = format!("approval:{deployment_id}");
+        connection.execute(
+            "INSERT INTO operations(id, deployment_id, kind, status) VALUES (?1, ?2, 'approve_plan', 'succeeded')",
+            params![operation_id, deployment_id],
+        )?;
+        connection.execute(
+            "UPDATE deployments SET approval_status = 'approved', approved_by = ?2, approval_operation_id = ?3 WHERE id = ?1",
+            params![deployment_id, approved_by, operation_id],
+        )?;
+        Ok(())
     }
 
     pub fn set_desired_state(&self, deployment_id: &str, state: &str) -> Result<(), StoreError> {
@@ -262,6 +312,58 @@ mod tests {
         assert_eq!(deployment.desired_state, "running");
         assert_eq!(deployment.observed_state, "degraded");
         assert_eq!(deployment.plan_hash, "");
+    }
+
+    #[test]
+    fn approval_requires_matching_plan_hash_and_is_audited() {
+        let store = StateStore::open_in_memory().unwrap();
+        store
+            .create_deployment_with_metadata(
+                "deployment-1",
+                "blueprint-1",
+                3,
+                "{\"plan\":true}",
+                "plan-hash-1",
+            )
+            .unwrap();
+
+        assert!(matches!(
+            store.approve_plan("deployment-1", "wrong-hash", "operator"),
+            Err(StoreError::PlanHashMismatch)
+        ));
+        store
+            .approve_plan("deployment-1", "plan-hash-1", "operator")
+            .unwrap();
+        let deployment = store.deployment("deployment-1").unwrap().unwrap();
+        assert_eq!(deployment.approval_status, "approved");
+        assert_eq!(deployment.approved_by.as_deref(), Some("operator"));
+        assert_eq!(
+            deployment.approval_operation_id.as_deref(),
+            Some("approval:deployment-1")
+        );
+        assert_eq!(
+            store
+                .operation("approval:deployment-1")
+                .unwrap()
+                .unwrap()
+                .status,
+            "succeeded"
+        );
+    }
+
+    #[test]
+    fn approval_cannot_be_repeated_after_the_plan_is_approved() {
+        let store = StateStore::open_in_memory().unwrap();
+        store
+            .create_deployment_with_metadata("deployment-1", "blueprint-1", 1, "{}", "hash")
+            .unwrap();
+        store
+            .approve_plan("deployment-1", "hash", "operator")
+            .unwrap();
+        assert!(matches!(
+            store.approve_plan("deployment-1", "hash", "operator"),
+            Err(StoreError::AlreadyApproved)
+        ));
     }
 
     #[test]
