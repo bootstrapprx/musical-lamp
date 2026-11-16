@@ -14,6 +14,7 @@ pub struct DeploymentPlan {
     pub image_reference: Option<String>,
     pub database_image: String,
     pub cache_image: String,
+    pub sites: Vec<String>,
     pub steps: Vec<PlanStep>,
     pub plan_hash: String,
 }
@@ -170,6 +171,11 @@ impl<'a> DeploymentPlanner<'a> {
             image_reference,
             database_image: blueprint.runtime.database.image.clone(),
             cache_image: blueprint.runtime.cache.image.clone(),
+            sites: blueprint
+                .sites
+                .iter()
+                .map(|site| site.name.clone())
+                .collect(),
             steps,
             plan_hash: String::new(),
         };
