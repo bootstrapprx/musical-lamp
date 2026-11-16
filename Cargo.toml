@@ -1,5 +1,5 @@
 [package]
-name = "musical-lamp-tui"
+name = "frappe-deployer"
 version = "0.1.0"
 edition = "2021"
 description = "Multi-host Docker Compose + FinOps TUI orchestrator"

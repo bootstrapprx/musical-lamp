@@ -1,4 +1,4 @@
-# musical-lamp-tui
+# frappe-deployer
 
 TUI em Rust (Ratatui/Crossterm + Tokio) para administrar produtos Docker Compose em `products/<produto>`, com foco em ciclo de vida de `.env`, pre-flight/Doctor, operações da stack e telemetria local do Docker.
 
