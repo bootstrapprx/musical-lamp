@@ -1,7 +1,7 @@
 # Serviços opcionais: ative com common/dc.sh <produto> --observability up -d
 services:
   otel-collector:
-    image: otel/opentelemetry-collector-contrib:0.138.0
+    image: otel/opentelemetry-collector-contrib:latest
     profiles: ["observability"]
     command: ["--config=/etc/otelcol-contrib/config.yaml"]
     volumes:
@@ -20,7 +20,7 @@ services:
       start_period: 10s
 
   prometheus:
-    image: prom/prometheus:v3.8.0
+    image: prom/prometheus:latest
     profiles: ["observability"]
     command:
       - --config.file=/etc/prometheus/prometheus.yml
@@ -46,7 +46,7 @@ services:
       start_period: 15s
 
   grafana:
-    image: grafana/grafana:12.1.1
+    image: grafana/grafana:latest
     profiles: ["observability"]
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}

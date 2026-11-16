@@ -132,7 +132,7 @@ services:
 
   # ---- dados -------------------------------------------------------------------
   db:
-    image: ${MARIADB_IMAGE:-mariadb:11.8}
+    image: ${MARIADB_IMAGE:-mariadb:latest}
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
@@ -155,7 +155,7 @@ services:
       - db-data:/var/lib/mysql
 
   redis-cache:
-    image: ${REDIS_IMAGE:-redis:8-alpine}
+    image: ${REDIS_IMAGE:-redis:latest}
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
@@ -168,7 +168,7 @@ services:
       retries: 10
 
   redis-queue:
-    image: ${REDIS_IMAGE:-redis:8-alpine}
+    image: ${REDIS_IMAGE:-redis:latest}
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true

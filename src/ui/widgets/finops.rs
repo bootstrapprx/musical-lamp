@@ -1,7 +1,7 @@
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Borders, Gauge, Paragraph, Sparkline, Tabs, Wrap};
+use ratatui::widgets::{Block, BorderType, Borders, Paragraph, Sparkline, Tabs, Wrap};
 use ratatui::Frame;
 
 use crate::app::{AppState, DetailTab};
@@ -39,31 +39,43 @@ pub fn draw_finops(f: &mut Frame, area: Rect, state: &AppState, focused: bool) {
         .split(inner);
 
     let cpu_color = theme::health_color(node.cpu_pct);
-    let cpu = Gauge::default()
-        .gauge_style(Style::default().fg(cpu_color).bg(theme::MANTLE))
-        .label(format!("CPU {:>5.1}%", node.cpu_pct))
-        .use_unicode(true)
-        .ratio((node.cpu_pct / 100.0).clamp(0.0, 1.0));
-    f.render_widget(cpu, chunks[0]);
+    let cpu_line = Line::from(vec![
+        Span::styled("CPU ", Style::default().fg(theme::SUBTEXT)),
+        Span::styled(
+            braille_bar(node.cpu_pct, chunks[0].width.saturating_sub(12) as usize),
+            Style::default().fg(cpu_color),
+        ),
+        Span::styled(
+            format!(" {:>5.1}%", node.cpu_pct),
+            Style::default().fg(cpu_color),
+        ),
+    ]);
+    f.render_widget(Paragraph::new(cpu_line), chunks[0]);
 
     let ram_color = theme::health_color(node.ram_pct);
-    let ram = Gauge::default()
-        .gauge_style(Style::default().fg(ram_color).bg(theme::MANTLE))
-        .label(format!("RAM {:>5.1}%", node.ram_pct))
-        .use_unicode(true)
-        .ratio((node.ram_pct / 100.0).clamp(0.0, 1.0));
-    f.render_widget(ram, chunks[1]);
+    let ram_line = Line::from(vec![
+        Span::styled("RAM ", Style::default().fg(theme::SUBTEXT)),
+        Span::styled(
+            braille_bar(node.ram_pct, chunks[1].width.saturating_sub(12) as usize),
+            Style::default().fg(ram_color),
+        ),
+        Span::styled(
+            format!(" {:>5.1}%", node.ram_pct),
+            Style::default().fg(ram_color),
+        ),
+    ]);
+    f.render_widget(Paragraph::new(ram_line), chunks[1]);
 
     let spark_data: Vec<u64> = node.cpu_history.to_vec();
     let spark = Sparkline::default()
-        .block(Block::default().title("CPU recente"))
+        .block(Block::default().title("Consumo recente (CPU/RAM)"))
         .data(&spark_data)
         .style(Style::default().fg(theme::TEAL));
     f.render_widget(spark, chunks[2]);
 
-    let trend = trend_arrow(&node.cpu_history);
+    let (trend_symbol, trend_pct) = trend_indicator(&node.cpu_history, &node.ram_history);
     let eff = efficiency_score(node.cpu_pct, node.ram_pct);
-    let proj = projected_30d(node.monthly_cost, node.cpu_pct, node.ram_pct);
+    let proj = projected_30d(node.monthly_cost, node.cpu_pct, node.ram_pct, trend_pct);
     let costs = state.container_costs_map();
     let allocated: f64 = state
         .containers_for_selected_node()
@@ -75,6 +87,7 @@ pub fn draw_finops(f: &mut Frame, area: Rect, state: &AppState, focused: bool) {
     } else {
         0.0
     };
+    let trend_label = format!("{trend_symbol} {:+.1}%", trend_pct);
     let lines = vec![
         Line::from(vec![
             Span::styled(
@@ -92,8 +105,8 @@ pub fn draw_finops(f: &mut Frame, area: Rect, state: &AppState, focused: bool) {
         Line::from(vec![
             Span::styled("Projeção de 30 dias: ", Style::default().fg(theme::SUBTEXT)),
             Span::styled(
-                format!("${:.2}/mo {trend}", proj.0),
-                Style::default().fg(if proj.1 >= 0.0 {
+                format!("${:.2}/mo {}", proj.0, trend_label),
+                Style::default().fg(if trend_pct >= 0.0 {
                     theme::YELLOW
                 } else {
                     theme::GREEN
@@ -106,11 +119,28 @@ pub fn draw_finops(f: &mut Frame, area: Rect, state: &AppState, focused: bool) {
             Span::raw(format!(
                 "  | Nó: {} ({})",
                 node.name,
-                if node.online { "online" } else { "offline" }
+                if node.online {
+                    "online"
+                } else {
+                    "offline/standby"
+                }
             )),
         ]),
     ];
     f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: true }), chunks[3]);
+}
+
+fn braille_bar(pct: f64, width: usize) -> String {
+    let width = width.clamp(8, 40);
+    let levels = [' ', '⡀', '⡄', '⡆', '⡇', '⣇', '⣧', '⣷', '⣿'];
+    let total_steps = width * 8;
+    let filled = ((pct.clamp(0.0, 100.0) / 100.0) * total_steps as f64).round() as usize;
+    let mut out = String::with_capacity(width);
+    for i in 0..width {
+        let cell = filled.saturating_sub(i * 8).min(8);
+        out.push(levels[cell]);
+    }
+    out
 }
 
 pub fn draw_detail_tabs(f: &mut Frame, area: Rect, state: &AppState, focused: bool) {
@@ -279,19 +309,29 @@ fn draw_forecast(f: &mut Frame, area: Rect, state: &AppState) {
     f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: true }), area);
 }
 
-fn trend_arrow(history: &[u64]) -> &'static str {
-    if history.len() < 2 {
-        return "→ 0%";
-    }
-    let a = history[history.len().saturating_sub(2)] as f64;
-    let b = *history.last().unwrap_or(&0) as f64;
-    if b > a + 1.0 {
-        "↗ +%"
-    } else if b + 1.0 < a {
-        "↘ -%"
+fn trend_indicator(cpu: &[u64], ram: &[u64]) -> (&'static str, f64) {
+    let avg = |h: &[u64]| -> f64 {
+        if h.is_empty() {
+            0.0
+        } else {
+            h.iter().map(|v| *v as f64).sum::<f64>() / h.len() as f64
+        }
+    };
+    let tail = |h: &[u64], n: usize| -> f64 {
+        let start = h.len().saturating_sub(n);
+        avg(&h[start..])
+    };
+    let recent = (tail(cpu, 3) + tail(ram, 3)) / 2.0;
+    let older = (tail(cpu, 8) + tail(ram, 8)) / 2.0;
+    let delta = (recent - older).clamp(-30.0, 30.0);
+    let symbol = if delta > 0.8 {
+        "↗"
+    } else if delta < -0.8 {
+        "↘"
     } else {
-        "→ estável"
-    }
+        "→"
+    };
+    (symbol, delta)
 }
 
 fn efficiency_score(cpu: f64, ram: f64) -> String {
@@ -305,11 +345,15 @@ fn efficiency_score(cpu: f64, ram: f64) -> String {
     } else {
         "Crítica"
     };
-    format!("{score} ({util:.0}%)")
+    format!("{score} ({util:.0}% utilização)")
 }
 
-fn projected_30d(base: f64, cpu: f64, ram: f64) -> (f64, f64) {
-    let pressure = ((cpu + ram) / 200.0 - 0.5).clamp(-0.2, 0.3);
-    let proj = base * (1.0 + pressure);
-    ((proj * 100.0).round() / 100.0, pressure * 100.0)
+fn projected_30d(base: f64, cpu: f64, ram: f64, trend_pct: f64) -> (f64, f64) {
+    let pressure = ((cpu + ram) / 200.0 - 0.45).clamp(-0.2, 0.35);
+    let trend_factor = (trend_pct / 100.0).clamp(-0.15, 0.2);
+    let proj = base * (1.0 + pressure + trend_factor);
+    (
+        (proj * 100.0).round() / 100.0,
+        (pressure + trend_factor) * 100.0,
+    )
 }

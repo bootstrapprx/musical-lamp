@@ -17,7 +17,10 @@ pub fn draw(f: &mut Frame, area: Rect, state: &AppState) {
     let is_build = state.bridge_panel == crate::app::BridgePanel::BuildEnv;
     let file_label = if is_build { "build.env" } else { ".env" };
     let Some(env) = state.active_env() else {
-        let p = Paragraph::new(format!("Sem estado de {file_label} para o produto selecionado.")).block(
+        let p = Paragraph::new(format!(
+            "Sem estado de {file_label} para o produto selecionado."
+        ))
+        .block(
             Block::default()
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
@@ -325,7 +328,11 @@ pub fn draw(f: &mut Frame, area: Rect, state: &AppState) {
                 lines.push(Line::from(vec![
                     Span::styled(
                         if selected { "› " } else { "  " },
-                        Style::default().fg(if selected { theme::BLUE } else { theme::SUBTEXT }),
+                        Style::default().fg(if selected {
+                            theme::BLUE
+                        } else {
+                            theme::SUBTEXT
+                        }),
                     ),
                     Span::styled(
                         key.to_string(),
@@ -337,10 +344,7 @@ pub fn draw(f: &mut Frame, area: Rect, state: &AppState) {
                                 Modifier::empty()
                             }),
                     ),
-                    Span::styled(
-                        format!(" — {reason}"),
-                        Style::default().fg(theme::SUBTEXT),
-                    ),
+                    Span::styled(format!(" — {reason}"), Style::default().fg(theme::SUBTEXT)),
                 ]));
             }
             if missing.len() > 12 {

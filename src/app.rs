@@ -611,10 +611,7 @@ impl AppState {
         match key.code {
             KeyCode::Char('q') => {
                 let dirty_env = self.current_env().map(|e| e.dirty).unwrap_or(false);
-                let dirty_build = self
-                    .current_build_env()
-                    .map(|e| e.dirty)
-                    .unwrap_or(false);
+                let dirty_build = self.current_build_env().map(|e| e.dirty).unwrap_or(false);
                 if dirty_env || dirty_build {
                     let which = match (dirty_env, dirty_build) {
                         (true, true) => ".env e build.env",
@@ -703,10 +700,7 @@ impl AppState {
                     let next = (index + 1) % self.products.len();
                     let target = self.products[next].clone();
                     let dirty_env = self.current_env().map(|e| e.dirty).unwrap_or(false);
-                    let dirty_build = self
-                        .current_build_env()
-                        .map(|e| e.dirty)
-                        .unwrap_or(false);
+                    let dirty_build = self.current_build_env().map(|e| e.dirty).unwrap_or(false);
                     if dirty_env || dirty_build {
                         let which = match (dirty_env, dirty_build) {
                             (true, true) => ".env e build.env",

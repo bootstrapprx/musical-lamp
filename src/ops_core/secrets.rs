@@ -31,7 +31,7 @@ fn fill(n: usize) -> Result<Vec<u8>, String> {
         return Err("tamanho inválido".into());
     }
     let mut buf = vec![0u8; n];
-    getrandom::getrandom(&mut buf).map_err(|e| format!("CSPRNG indisponível: {e}"))?;
+    getrandom::fill(&mut buf).map_err(|e| format!("CSPRNG indisponível: {e}"))?;
     Ok(buf)
 }
 
