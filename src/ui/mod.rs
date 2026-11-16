@@ -156,7 +156,7 @@ fn draw_cluster(f: &mut Frame, area: ratatui::layout::Rect, state: &AppState) {
 
 fn draw_bridges(f: &mut Frame, area: ratatui::layout::Rect, state: &AppState) {
     match state.bridge_panel {
-        BridgePanel::Env => envw::draw(f, area, state),
+        BridgePanel::Env | BridgePanel::BuildEnv => envw::draw(f, area, state),
         BridgePanel::Tunnel => {
             let has_token = crate::app::env_has_tunnel_token(&state.featured_product);
             let token_status = if has_token { "configurado" } else { "ausente" };
@@ -171,9 +171,9 @@ fn draw_bridges(f: &mut Frame, area: ratatui::layout::Rect, state: &AppState) {
                 Line::from(vec![Span::styled("Cloudflare Tunnel (cloudflared): ", Style::default().fg(theme::TEXT)), Span::styled(token_status, Style::default().fg(token_color))]),
                 Line::from("• Serviço executado via Docker Compose com cloudflare/cloudflared:latest."),
                 Line::from("• Comando: tunnel --no-autoupdate run --token \"$TUNNEL_TOKEN\" (token definido no .env)."),
-                Line::from("• Configure TUNNEL_TOKEN no painel [Tab] Env. Campos de rede (EDGE_SUBNET/EDGE_IP_RANGE/CLOUDFLARED_IP) devem ser IPv4/CIDR coerentes."),
+                Line::from("• Configure TUNNEL_TOKEN no painel [Tab] Env. Em Build, edite build.env (IMAGE, FRAPPE_REF, flags de build)."),
                 Line::from(""),
-                Line::from(Span::styled("Dica: use [Tab] para alternar entre Env e Tunnel. Em Env, [n] gera segredos e os campos mostram contexto (URL, caminho, imagem).", Style::default().fg(theme::SUBTEXT))),
+                Line::from(Span::styled("Dica: use [Tab] para alternar entre Env, build.env e Tunnel. [w] salva o arquivo ativo.", Style::default().fg(theme::SUBTEXT))),
             ];
             let p = Paragraph::new(lines).wrap(Wrap { trim: true }).block(
                 Block::default()
@@ -218,7 +218,14 @@ fn draw_footer(f: &mut Frame, area: ratatui::layout::Rect, state: &AppState) {
                     } else if state.env_missing_open {
                         "[↑/↓] Selecionar ausente | [Enter] Ir para variável | [Esc/m] Fechar lista | [q] Quit"
                     } else {
-                        "[↑/↓] Variável | [Enter] Editar | [m] Variáveis ausentes | [g] Gerar do exemplo | [w] Salvar .env | [R] Reset .env | [Tab] Tunnel | [q] Quit"
+                        "[↑/↓] Variável | [Enter] Editar | [m] Variáveis ausentes | [g] Gerar .env | [w] Salvar .env | [R] Reset .env | [Tab] build.env | [q] Quit"
+                    }
+                }
+                BridgePanel::BuildEnv => {
+                    if state.env_editing {
+                        "[Enter] Salvar valor | [Esc] Cancelar"
+                    } else {
+                        "[↑/↓] Variável | [Enter] Editar | [w] Salvar build.env | [r] Recarregar | [Tab] Tunnel | [q] Quit"
                     }
                 }
                 BridgePanel::Tunnel => "[Tab] Env | [1-3] Views | [q] Quit",

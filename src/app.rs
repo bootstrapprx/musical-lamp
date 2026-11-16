@@ -46,6 +46,7 @@ pub enum StackPanel {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BridgePanel {
     Env,
+    BuildEnv,
     Tunnel,
 }
 
@@ -259,7 +260,9 @@ pub struct AppState {
     pub featured_product: Product,
     pub products: Vec<Product>,
     pub env_states: HashMap<Product, ProductEnv>,
+    pub build_env_states: HashMap<Product, ProductEnv>,
     pub env_selected: usize,
+    pub build_env_selected: usize,
     pub env_editing: bool,
     pub env_input: String,
     pub env_missing_open: bool,
@@ -298,8 +301,10 @@ impl AppState {
         let nodes = Vec::new();
         let containers = Vec::new();
         let mut env_states = HashMap::new();
+        let mut build_env_states = HashMap::new();
         for product in &products {
             env_states.insert(product.clone(), load_env_state(product));
+            build_env_states.insert(product.clone(), load_build_env_state(product));
         }
         let mut ops_states = HashMap::new();
         for p in &products {
@@ -338,7 +343,9 @@ impl AppState {
             featured_product,
             products,
             env_states,
+            build_env_states,
             env_selected: 0,
+            build_env_selected: 0,
             env_editing: false,
             env_input: String::new(),
             env_missing_open: false,
@@ -389,6 +396,37 @@ impl AppState {
     }
     pub fn current_env_mut(&mut self) -> Option<&mut ProductEnv> {
         self.env_states.get_mut(&self.featured_product)
+    }
+    pub fn current_build_env(&self) -> Option<&ProductEnv> {
+        self.build_env_states.get(&self.featured_product)
+    }
+    pub fn active_env(&self) -> Option<&ProductEnv> {
+        if self.bridge_panel == BridgePanel::BuildEnv {
+            self.current_build_env()
+        } else {
+            self.current_env()
+        }
+    }
+    pub fn active_env_mut(&mut self) -> Option<&mut ProductEnv> {
+        if self.bridge_panel == BridgePanel::BuildEnv {
+            self.build_env_states.get_mut(&self.featured_product)
+        } else {
+            self.env_states.get_mut(&self.featured_product)
+        }
+    }
+    pub fn active_env_selected(&self) -> usize {
+        if self.bridge_panel == BridgePanel::BuildEnv {
+            self.build_env_selected
+        } else {
+            self.env_selected
+        }
+    }
+    pub fn set_active_env_selected(&mut self, idx: usize) {
+        if self.bridge_panel == BridgePanel::BuildEnv {
+            self.build_env_selected = idx;
+        } else {
+            self.env_selected = idx;
+        }
     }
 
     /// Lista variáveis ausentes/problemáticas para navegação rápida no painel Env.
@@ -564,7 +602,7 @@ impl AppState {
             return Some(Action::Quit);
         }
         if self.view == View::BridgesPlugins
-            && self.bridge_panel == BridgePanel::Env
+            && matches!(self.bridge_panel, BridgePanel::Env | BridgePanel::BuildEnv)
             && self.env_editing
         {
             return self.handle_env_edit_key(key);
@@ -572,10 +610,21 @@ impl AppState {
 
         match key.code {
             KeyCode::Char('q') => {
-                if self.current_env().map(|e| e.dirty).unwrap_or(false) {
+                let dirty_env = self.current_env().map(|e| e.dirty).unwrap_or(false);
+                let dirty_build = self
+                    .current_build_env()
+                    .map(|e| e.dirty)
+                    .unwrap_or(false);
+                if dirty_env || dirty_build {
+                    let which = match (dirty_env, dirty_build) {
+                        (true, true) => ".env e build.env",
+                        (true, false) => ".env",
+                        (false, true) => "build.env",
+                        _ => "arquivos",
+                    };
                     self.modal = Modal::ConfirmText {
                         title: "Sair com alterações não salvas".into(),
-                        message: format!("O .env de {} tem alterações não salvas. Digite 'SAIR' para sair sem salvar.", self.featured_product.label()),
+                        message: format!("O {which} de {} tem alterações não salvas. Digite 'SAIR' para sair sem salvar.", self.featured_product.label()),
                         required: "SAIR".into(),
                         input: String::new(),
                         action: ConfirmAction::QuitApp,
@@ -616,8 +665,12 @@ impl AppState {
                 None
             }
             KeyCode::Tab => {
-                if self.view == View::BridgesPlugins && self.bridge_panel == BridgePanel::Env {
+                if self.view == View::BridgesPlugins
+                    && matches!(self.bridge_panel, BridgePanel::Env | BridgePanel::BuildEnv)
+                {
                     self.env_missing_open = false;
+                    self.env_editing = false;
+                    self.env_input.clear();
                 }
                 if self.view == View::ClusterFinOps {
                     self.focus = match self.focus {
@@ -633,9 +686,11 @@ impl AppState {
                     };
                 } else if self.view == View::BridgesPlugins {
                     self.bridge_panel = match self.bridge_panel {
-                        BridgePanel::Env => BridgePanel::Tunnel,
+                        BridgePanel::Env => BridgePanel::BuildEnv,
+                        BridgePanel::BuildEnv => BridgePanel::Tunnel,
                         BridgePanel::Tunnel => BridgePanel::Env,
                     };
+                    self.clamp_env_selection();
                 }
                 None
             }
@@ -647,11 +702,22 @@ impl AppState {
                 {
                     let next = (index + 1) % self.products.len();
                     let target = self.products[next].clone();
-                    if self.current_env().map(|e| e.dirty).unwrap_or(false) {
+                    let dirty_env = self.current_env().map(|e| e.dirty).unwrap_or(false);
+                    let dirty_build = self
+                        .current_build_env()
+                        .map(|e| e.dirty)
+                        .unwrap_or(false);
+                    if dirty_env || dirty_build {
+                        let which = match (dirty_env, dirty_build) {
+                            (true, true) => ".env e build.env",
+                            (true, false) => ".env",
+                            (false, true) => "build.env",
+                            _ => "arquivos",
+                        };
                         self.pending_switch_to = Some(target.clone());
                         self.modal = Modal::ConfirmText {
                             title: "Alterações não salvas".into(),
-                            message: format!("O .env de {} tem alterações não salvas. Digite '{}' para trocar de produto e descartar salvamento automático (use [w] antes se quiser salvar).", self.featured_product.label(), target.label()),
+                            message: format!("O {which} de {} tem alterações não salvas. Digite '{}' para trocar de produto e descartar salvamento automático (use [w] antes se quiser salvar).", self.featured_product.label(), target.label()),
                             required: target.label().to_string(),
                             input: String::new(),
                             action: ConfirmAction::SwitchProduct(target),
@@ -821,7 +887,9 @@ impl AppState {
                 None
             }
             KeyCode::Enter
-                if self.view == View::BridgesPlugins && self.bridge_panel == BridgePanel::Env =>
+                if self.view == View::BridgesPlugins
+                    && matches!(self.bridge_panel, BridgePanel::Env | BridgePanel::BuildEnv)
+                    && !self.env_missing_open =>
             {
                 self.start_env_edit();
                 None
@@ -833,13 +901,15 @@ impl AppState {
                 None
             }
             KeyCode::Char('r')
-                if self.view == View::BridgesPlugins && self.bridge_panel == BridgePanel::Env =>
+                if self.view == View::BridgesPlugins
+                    && matches!(self.bridge_panel, BridgePanel::Env | BridgePanel::BuildEnv) =>
             {
                 self.reload_env();
                 None
             }
             KeyCode::Char('w')
-                if self.view == View::BridgesPlugins && self.bridge_panel == BridgePanel::Env =>
+                if self.view == View::BridgesPlugins
+                    && matches!(self.bridge_panel, BridgePanel::Env | BridgePanel::BuildEnv) =>
             {
                 self.save_env();
                 None
@@ -910,8 +980,8 @@ impl AppState {
                 StackPanel::Overview => {}
             },
             View::BridgesPlugins => {
-                if self.bridge_panel == BridgePanel::Env {
-                    if self.env_missing_open {
+                if matches!(self.bridge_panel, BridgePanel::Env | BridgePanel::BuildEnv) {
+                    if self.bridge_panel == BridgePanel::Env && self.env_missing_open {
                         let len = self.missing_env_vars().len();
                         if len > 0 {
                             self.env_missing_selected = if self.env_missing_selected == 0 {
@@ -920,8 +990,11 @@ impl AppState {
                                 self.env_missing_selected - 1
                             };
                         }
-                    } else if self.env_selected > 0 {
-                        self.env_selected -= 1;
+                    } else {
+                        let sel = self.active_env_selected();
+                        if sel > 0 {
+                            self.set_active_env_selected(sel - 1);
+                        }
                     }
                 }
             }
@@ -961,15 +1034,16 @@ impl AppState {
                 StackPanel::Overview => {}
             },
             View::BridgesPlugins => {
-                if self.bridge_panel == BridgePanel::Env {
-                    if self.env_missing_open {
+                if matches!(self.bridge_panel, BridgePanel::Env | BridgePanel::BuildEnv) {
+                    if self.bridge_panel == BridgePanel::Env && self.env_missing_open {
                         let len = self.missing_env_vars().len();
                         if len > 0 {
                             self.env_missing_selected = (self.env_missing_selected + 1) % len;
                         }
-                    } else if let Some(env) = self.current_env() {
-                        if self.env_selected + 1 < env.vars.len() {
-                            self.env_selected += 1;
+                    } else if let Some(env) = self.active_env() {
+                        let sel = self.active_env_selected();
+                        if sel + 1 < env.vars.len() {
+                            self.set_active_env_selected(sel + 1);
                         }
                     }
                 }
@@ -994,12 +1068,20 @@ impl AppState {
                 self.env_selected = env.vars.len() - 1;
             }
         }
+        if let Some(env) = self.current_build_env() {
+            if env.vars.is_empty() {
+                self.build_env_selected = 0;
+            } else if self.build_env_selected >= env.vars.len() {
+                self.build_env_selected = env.vars.len() - 1;
+            }
+        }
     }
 
     fn start_env_edit(&mut self) {
+        let sel = self.active_env_selected();
         let val = self
-            .current_env()
-            .and_then(|e| e.vars.get(self.env_selected).map(|v| v.value.clone()))
+            .active_env()
+            .and_then(|e| e.vars.get(sel).map(|v| v.value.clone()))
             .unwrap_or_default();
         self.env_editing = true;
         self.env_input = val;
@@ -1012,9 +1094,9 @@ impl AppState {
                 self.env_input.clear();
             }
             KeyCode::Enter => {
-                let idx = self.env_selected;
+                let idx = self.active_env_selected();
                 let input = self.env_input.clone();
-                if let Some(env) = self.current_env_mut() {
+                if let Some(env) = self.active_env_mut() {
                     if let Some(var) = env.vars.get_mut(idx) {
                         var.value = input;
                         env.dirty = true;
@@ -1041,7 +1123,7 @@ impl AppState {
     }
 
     fn toggle_env_reveal(&mut self) {
-        if let Some(env) = self.current_env_mut() {
+        if let Some(env) = self.active_env_mut() {
             env.reveal_secrets = !env.reveal_secrets;
             env.last_action = if env.reveal_secrets {
                 "segredos visíveis".into()
@@ -1052,8 +1134,8 @@ impl AppState {
     }
 
     fn generate_secret_for_selected(&mut self) {
-        let idx = self.env_selected;
-        let Some(env) = self.current_env_mut() else {
+        let idx = self.active_env_selected();
+        let Some(env) = self.active_env_mut() else {
             return;
         };
         let Some(var_key) = env.vars.get(idx).map(|v| v.key.clone()) else {
@@ -1076,8 +1158,13 @@ impl AppState {
 
     fn reload_env(&mut self) {
         let product = self.featured_product.clone();
-        self.env_states
-            .insert(product.clone(), load_env_state(&product));
+        if self.bridge_panel == BridgePanel::BuildEnv {
+            self.build_env_states
+                .insert(product.clone(), load_build_env_state(&product));
+        } else {
+            self.env_states
+                .insert(product.clone(), load_env_state(&product));
+        }
         self.clamp_env_selection();
         self.refresh_onboarding();
         self.run_doctor_scan(false);
@@ -1085,9 +1172,14 @@ impl AppState {
 
     fn save_env(&mut self) {
         let product = self.featured_product.clone();
-        let path_s = product_env_path(&product);
+        let is_build = self.bridge_panel == BridgePanel::BuildEnv;
+        let path_s = if is_build {
+            product_build_env_path(&product)
+        } else {
+            product_env_path(&product)
+        };
         let path = Path::new(&path_s);
-        let content = if let Some(env) = self.current_env() {
+        let content = if let Some(env) = self.active_env() {
             render_env_file(&env.vars)
         } else {
             return;
@@ -1097,7 +1189,7 @@ impl AppState {
             let _ = backup_env_file(path);
         }
         let result = write_env_atomic_secure(path, &content);
-        if let Some(env) = self.current_env_mut() {
+        if let Some(env) = self.active_env_mut() {
             match result {
                 Ok(_) => {
                     env.dirty = false;
@@ -2814,6 +2906,9 @@ impl AppState {
             self.env_states
                 .entry(p.clone())
                 .or_insert_with(|| load_env_state(p));
+            self.build_env_states
+                .entry(p.clone())
+                .or_insert_with(|| load_build_env_state(p));
             self.ops_states
                 .entry(p.clone())
                 .or_insert_with(|| OpsStatus {
@@ -3196,6 +3291,9 @@ pub fn product_env_path(product: &Product) -> String {
 pub fn product_env_example_path(product: &Product) -> String {
     format!("products/{}/.env.example", product.label())
 }
+pub fn product_build_env_path(product: &Product) -> String {
+    format!("products/{}/build.env", product.label())
+}
 
 pub fn parse_env_vars(content: &str) -> Vec<EnvVar> {
     let mut vars = Vec::new();
@@ -3329,6 +3427,57 @@ pub fn load_env_state(product: &Product) -> ProductEnv {
                 fnd.message
             ));
         }
+    }
+    ProductEnv {
+        product: product.clone(),
+        path_hint,
+        vars,
+        dirty: false,
+        last_action,
+        reveal_secrets: false,
+        findings,
+    }
+}
+
+pub fn load_build_env_state(product: &Product) -> ProductEnv {
+    let path_s = product_build_env_path(product);
+    let path = Path::new(&path_s);
+    let (path_hint, content, last_action) = if path.exists() {
+        match fs::read_to_string(path) {
+            Ok(c) => (path_s.clone(), c, format!("carregado de {path_s}")),
+            Err(e) => (
+                path_s.clone(),
+                String::new(),
+                format!("erro ao ler {path_s}: {e}"),
+            ),
+        }
+    } else {
+        (
+            path_s.clone(),
+            String::new(),
+            "nenhum build.env encontrado".into(),
+        )
+    };
+    let vars = if content.is_empty() {
+        Vec::new()
+    } else {
+        parse_env_vars(&content)
+    };
+    let mut findings = Vec::new();
+    let prod_dir = Path::new("products").join(product.label());
+    for fnd in validate::validate_build(&prod_dir) {
+        findings.push(format!(
+            "{:?} {}: {}",
+            fnd.severity,
+            fnd.key.unwrap_or_else(|| "-".into()),
+            fnd.message
+        ));
+    }
+    if vars.is_empty() && path.exists() {
+        findings.push("Info -: build.env vazio".into());
+    }
+    if !path.exists() {
+        findings.push("Warn -: build.env ausente (opcional conforme produto, mas recomendado para build da imagem)".into());
     }
     ProductEnv {
         product: product.clone(),

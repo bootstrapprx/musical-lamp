@@ -14,12 +14,14 @@ pub fn draw(f: &mut Frame, area: Rect, state: &AppState) {
         .constraints([Constraint::Length(4), Constraint::Min(5)])
         .split(area);
 
-    let Some(env) = state.current_env() else {
-        let p = Paragraph::new("Sem estado de .env para o produto selecionado.").block(
+    let is_build = state.bridge_panel == crate::app::BridgePanel::BuildEnv;
+    let file_label = if is_build { "build.env" } else { ".env" };
+    let Some(env) = state.active_env() else {
+        let p = Paragraph::new(format!("Sem estado de {file_label} para o produto selecionado.")).block(
             Block::default()
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
-                .title(".env"),
+                .title(file_label),
         );
         f.render_widget(p, area);
         return;
@@ -61,7 +63,11 @@ pub fn draw(f: &mut Frame, area: Rect, state: &AppState) {
         Block::default()
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
-            .title("Ciclo de vida do .env (Bridges & Plugins)"),
+            .title(if is_build {
+                "Ciclo de vida do build.env (Bridges & Plugins)"
+            } else {
+                "Ciclo de vida do .env (Bridges & Plugins)"
+            }),
     );
     f.render_widget(header, chunks[0]);
 
@@ -70,9 +76,14 @@ pub fn draw(f: &mut Frame, area: Rect, state: &AppState) {
         .constraints([Constraint::Percentage(52), Constraint::Percentage(48)])
         .split(chunks[1]);
 
+    let active_selected = state.active_env_selected();
     let items: Vec<ListItem> = if env.vars.is_empty() {
         vec![ListItem::new(Line::from(Span::styled(
-            "Nenhuma variável encontrada. Use [g] para gerar a partir do .env.example.",
+            if is_build {
+                "Nenhuma variável encontrada em build.env. Crie/edite (ex: IMAGE, FRAPPE_REF) e salve com [w]."
+            } else {
+                "Nenhuma variável encontrada. Use [g] para gerar a partir do .env.example."
+            },
             Style::default().fg(theme::SUBTEXT),
         )))]
     } else {
@@ -80,7 +91,7 @@ pub fn draw(f: &mut Frame, area: Rect, state: &AppState) {
             .iter()
             .enumerate()
             .map(|(i, v)| {
-                let selected = i == state.env_selected;
+                let selected = i == active_selected;
                 let is_secret = secrets::is_secret_key(&v.key);
                 let val_display = if v.value.is_empty() {
                     "<vazio>".to_string()
@@ -129,7 +140,7 @@ pub fn draw(f: &mut Frame, area: Rect, state: &AppState) {
         .highlight_symbol("› ");
     let mut st = ListState::default();
     if !env.vars.is_empty() {
-        st.select(Some(state.env_selected.min(env.vars.len() - 1)));
+        st.select(Some(active_selected.min(env.vars.len() - 1)));
     }
     f.render_stateful_widget(list, body[0], &mut st);
 
@@ -138,7 +149,7 @@ pub fn draw(f: &mut Frame, area: Rect, state: &AppState) {
         .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
         .split(body[1]);
 
-    let (key, value, comment, hint, can_gen) = if let Some(v) = env.vars.get(state.env_selected) {
+    let (key, value, comment, hint, can_gen) = if let Some(v) = env.vars.get(active_selected) {
         let is_secret = secrets::is_secret_key(&v.key);
         let show = if state.env_editing {
             state.env_input.clone()
@@ -283,7 +294,7 @@ pub fn draw(f: &mut Frame, area: Rect, state: &AppState) {
     lines.push(Line::from(
         "[g] exemplo [r] recarregar [w] salvar [n] segredo [v] revelar [m] ausentes",
     ));
-    if state.env_missing_open {
+    if state.env_missing_open && !is_build {
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
             "Dropdown — variáveis ausentes (↑/↓ Enter seleciona, Esc fecha):",

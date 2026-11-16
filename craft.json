@@ -9,7 +9,7 @@
   "status": "ready",
   "note": "Ready: all 2 checks pass.",
   "created_ms": 1794595666281,
-  "updated_ms": 1794767993741,
+  "updated_ms": 1794790281745,
   "checks": [
     {
       "round": 1,
@@ -496,13 +496,31 @@
       "note": "`cargo test --quiet` passed.",
       "artifacts": [],
       "at_ms": 1794767993731
+    },
+    {
+      "round": 28,
+      "check": "build",
+      "passed": true,
+      "similarity": null,
+      "note": "`cargo build --quiet` passed.",
+      "artifacts": [],
+      "at_ms": 1794790281657
+    },
+    {
+      "round": 28,
+      "check": "own-tests",
+      "passed": true,
+      "similarity": null,
+      "note": "`cargo test --quiet` passed.",
+      "artifacts": [],
+      "at_ms": 1794790281736
     }
   ],
   "agent_session": null,
   "agent_session_by": "opencode",
   "capture_deep": true,
   "allowed_actions": [],
-  "last_reply": "Ajustei a tela de configurações do ambiente para deixar claro quando ainda há erros por falta de configurações, mostrando a quantidade de erros e de variáveis ausentes. Agora você pode abrir uma lista suspensa de variáveis ausentes, navegar por ela e ir direto até a variável que precisa ser preenchida, facilitando corrigir o que está faltando. Mantive o restante da interface e do funcionamento já existentes, apenas melhorando essa parte de identificação e acesso rápido às pendências. Não consegui ver a imagem que você enviou, então pode haver algum detalhe visual específico dela que ainda não esteja exatamente igual ao que você imaginou. Se quiser, no próximo passo posso ajustar essa lista (por exemplo, o texto de cada item ou onde ela aparece na tela) conforme o que você esperava ver.",
+  "last_reply": "A interface do terminal foi ajustada para acompanhar o painel de servidores, custos e detalhes que você pediu, e agora o arquivo de configuração de montagem da imagem de cada produto também passa a ser considerado: você pode vê-lo, editar e salvar junto das demais configurações do produto, com os avisos de verificação já aparecendo ali.\n\nMantive o que já funcionava no seu projeto e adaptei a tela para o novo formato de navegação, painéis e janelas de confirmação, mas algumas partes ainda dependem de dados simulados quando não há conexão real com os servidores, então os valores mostrados podem ser estimativas nesses casos.\n\nSe quiser, o próximo passo pode ser conectar essas telas aos servidores e às pilhas reais para que custos, logs e operações reflitam exatamente o que está rodando em cada máquina.",
   "asset_budget_usd": 5.0,
   "generate_assets": false,
   "app_in_root": true,
