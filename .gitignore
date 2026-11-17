@@ -156,3 +156,4 @@ gui/release/
 
 # WEb app node_modules
 web/node_modules/
+node_modules
