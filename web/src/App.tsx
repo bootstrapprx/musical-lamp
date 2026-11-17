@@ -1,25 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import {
-  ArrowClockwise,
-  CaretRight,
-  CheckCircle,
-  CircleNotch,
-  Cloud,
-  Code,
-  Cube,
-  Database,
-  Eye,
-  EyeSlash,
-  GearSix,
-  List,
-  Play,
-  Power,
-  ShieldCheck,
-  TerminalWindow,
-  Trash,
-  Warning,
-  X,
-} from "@phosphor-icons/react";
+import * as react from "@phosphor-icons/react";
 import {
   Button,
   Dialog,
@@ -219,7 +199,7 @@ function App() {
       <aside className="sidebar">
         <div className="brand">
           <span className="brand-mark">
-            <TerminalWindow size={21} weight="duotone" />
+            <react.TerminalWindow size={21} weight="duotone" />
           </span>
           <div>
             <strong>frappe</strong>
@@ -232,25 +212,25 @@ function App() {
         </div>
         <nav className="nav" aria-label="Navegação principal">
           <NavButton
-            icon={<Cloud />}
+            icon={<react.Cloud />}
             label="Overview"
             active={view === "overview"}
             onPress={() => setView("overview")}
           />
           <NavButton
-            icon={<Play />}
+            icon={<react.Play />}
             label="Operações"
             active={view === "operations"}
             onPress={() => setView("operations")}
           />
           <NavButton
-            icon={<Code />}
+            icon={<react.Code />}
             label="Ambiente"
             active={view === "environment"}
             onPress={() => setView("environment")}
           />
           <NavButton
-            icon={<List />}
+            icon={<react.List />}
             label="Life Cycle"
             active={view === "lifecycle"}
             onPress={() => setView("lifecycle")}
@@ -292,9 +272,9 @@ function App() {
               className="product-select"
             >
               <Button>
-                <Cube size={17} />
+                <react.Cube size={17} />
                 {product?.id ?? "Sem produto"}
-                <CaretRight size={14} />
+                <react.CaretRight size={14} />
               </Button>
               <Popover>
                 <ListBox>
@@ -311,7 +291,7 @@ function App() {
               aria-label="Atualizar snapshot"
               onPress={() => void refresh()}
             >
-              {loading ? <CircleNotch className="spin" /> : <ArrowClockwise />}
+              {loading ? <react.CircleNotch className="spin" /> : <react.ArrowClockwise />}
             </Button>
           </div>
         </header>
@@ -370,7 +350,7 @@ function NavButton({
     <Button className={`nav-item ${active ? "active" : ""}`} onPress={onPress}>
       {icon}
       <span>{label}</span>
-      {active && <CaretRight className="nav-caret" />}
+      {active && <react.CaretRight className="nav-caret" />}
     </Button>
   );
 }
@@ -399,7 +379,7 @@ function Overview({
         </div>
         <div className={missing ? "health-badge warning" : "health-badge"}>
           <span className="health-ring">
-            <ShieldCheck size={25} weight="duotone" />
+            <react.ShieldCheck size={25} weight="duotone" />
           </span>
           <div>
             <strong>
@@ -416,27 +396,27 @@ function Overview({
           label="Produtos"
           value={snapshot.products.length}
           detail="no catálogo"
-          icon={<Cube />}
+          icon={<react.Cube />}
         />
         <Metric
           label="Docker"
           value={snapshot.docker.ok ? "Online" : "Offline"}
           detail={snapshot.docker.text ?? "daemon indisponível"}
-          icon={<Database />}
+          icon={<react.Database />}
           tone={snapshot.docker.ok ? "green" : "red"}
         />
         <Metric
           label="Compose"
           value={snapshot.compose.ok ? "Pronto" : "Indisponível"}
           detail="plugin detectado"
-          icon={<GearSix />}
+          icon={<react.GearSix />}
           tone={snapshot.compose.ok ? "green" : "red"}
         />
         <Metric
           label="Ambiente"
           value={missing ? "Revisar" : "Íntegro"}
           detail={product?.id ?? "sem produto"}
-          icon={<ShieldCheck />}
+          icon={<react.ShieldCheck />}
           tone={missing ? "amber" : "green"}
         />
       </div>
@@ -447,7 +427,7 @@ function Overview({
             title={product?.id ?? "Nenhum produto"}
             action={
               <Button className="text-button" onPress={onOperations}>
-                Abrir operações <CaretRight />
+                Abrir operações <react.CaretRight />
               </Button>
             }
           />
@@ -487,7 +467,7 @@ function Overview({
             title="Eventos recentes"
             action={
               <Button className="text-button" onPress={onOperations}>
-                Ver operações <CaretRight />
+                Ver operações <react.CaretRight />
               </Button>
             }
           />
@@ -554,13 +534,13 @@ function Readiness({
   return (
     <div className="readiness-item">
       <span className={ok ? "check ok" : "check"}>
-        {ok ? <CheckCircle weight="fill" /> : <Warning weight="fill" />}
+        {ok ? <react.CheckCircle weight="fill" /> : <react.Warning weight="fill" />}
       </span>
       <div>
         <strong>{title}</strong>
         <span>{detail}</span>
       </div>
-      <CaretRight className="muted-icon" />
+      <react.CaretRight className="muted-icon" />
     </div>
   );
 }
@@ -584,16 +564,16 @@ function Operations({
   onRun: (action: OperationAction) => void;
 }) {
   const actions: Array<[OperationAction, string, string, React.ReactNode]> = [
-    ["up", "Subir stack", "Iniciar serviços em segundo plano", <Play />],
-    ["status", "Consultar status", "Ler o estado real do Compose", <Cloud />],
+    ["up", "Subir stack", "Iniciar serviços em segundo plano", <react.Play />],
+    ["status", "Consultar status", "Ler o estado real do Compose", <react.Cloud />],
     [
       "restart",
       "Reiniciar",
       "Recriar serviços mantendo volumes",
-      <ArrowClockwise />,
+      <react.ArrowClockwise />,
     ],
-    ["logs", "Ver logs", "Abrir as últimas 80 linhas", <TerminalWindow />],
-    ["migrate", "Migrar", "Executar migrate pelo serviço ops", <Database />],
+    ["logs", "Ver logs", "Abrir as últimas 80 linhas", <react.TerminalWindow />],
+    ["migrate", "Migrar", "Executar migrate pelo serviço ops", <react.Database />],
   ];
   return (
     <section className="page">
@@ -618,7 +598,7 @@ function Operations({
               <strong>{title}</strong>
               <small>{detail}</small>
             </span>
-            <CaretRight className="operation-arrow" />
+            <react.CaretRight className="operation-arrow" />
           </Button>
         ))}
         <DialogTrigger>
@@ -627,13 +607,13 @@ function Operations({
             isDisabled={loading || !product}
           >
             <span className="operation-icon">
-              <Power />
+              <react.Power />
             </span>
             <span>
               <strong>Parar stack</strong>
               <small>Não remove volumes Docker</small>
             </span>
-            <CaretRight className="operation-arrow" />
+            <react.CaretRight className="operation-arrow" />
           </Button>
           <Modal>
             <Dialog className="dialog">
@@ -644,9 +624,9 @@ function Operations({
                     onClick={close}
                     aria-label="Fechar"
                   >
-                    <X />
+                    <react.X />
                   </button>
-                  <Warning
+                  <react.Warning
                     size={30}
                     weight="duotone"
                     className="dialog-warning"
@@ -726,11 +706,11 @@ function Environment({
               className="secondary-button"
               onPress={() => setReveal(!reveal)}
             >
-              {reveal ? <EyeSlash /> : <Eye />}
+              {reveal ? <react.EyeSlash /> : <react.Eye />}
               {reveal ? "Mascarar segredos" : "Revelar segredos"}
             </Button>
             <Button className="primary-button" onPress={() => onSave(lines)}>
-              <CheckCircle />
+              <react.CheckCircle />
               Salvar com backup
             </Button>
           </div>
@@ -769,7 +749,7 @@ function Environment({
             ))}
         </div>
         <p className="env-footnote">
-          <ShieldCheck /> Linhas sem chave, comentários e ordem original serão
+          <react.ShieldCheck /> Linhas sem chave, comentários e ordem original serão
           preservados pelo app.
         </p>
       </div>
@@ -799,7 +779,7 @@ function Lifecycle({
         <div className="catalog-header">
           <span>{snapshot.products.length} produtos encontrados</span>
           <Button className="secondary-button">
-            <GearSix />
+            <react.GearSix />
             Gerenciar catálogo
           </Button>
         </div>
@@ -819,19 +799,19 @@ function Lifecycle({
                 {item.hasEnv ? ".env pronto" : "sem .env"}
               </span>
             </div>
-            <CaretRight className="muted-icon" />
+            <react.CaretRight className="muted-icon" />
           </Button>
         ))}
         <div className="lifecycle-footer">
           <span>
-            <ShieldCheck /> Volumes Docker são preservados
+            <react.ShieldCheck /> Volumes Docker são preservados
           </span>
           <DialogTrigger>
             <Button
               className="danger-button"
               isDisabled={!activeId || snapshot.products.length < 2}
             >
-              <Trash /> Remover selecionado
+              <react.Trash /> Remover selecionado
             </Button>
             <Modal>
               <Dialog className="dialog">
@@ -842,9 +822,9 @@ function Lifecycle({
                       onClick={close}
                       aria-label="Fechar"
                     >
-                      <X />
+                      <react.X />
                     </button>
-                    <Trash
+                    <react.Trash
                       size={30}
                       weight="duotone"
                       className="dialog-warning"
