@@ -55,7 +55,7 @@ fn draw_header(f: &mut Frame, area: ratatui::layout::Rect, state: &AppState) {
     let mut left_lines = vec![
         Line::from(vec![
             Span::styled(
-                "musical-lamp-tui",
+                "frappe-deployer",
                 Style::default()
                     .fg(theme::MAUVE)
                     .add_modifier(Modifier::BOLD),
@@ -85,11 +85,13 @@ fn draw_header(f: &mut Frame, area: ratatui::layout::Rect, state: &AppState) {
         "[1] Cluster & FinOps",
         "[2] Compose Stacks",
         "[3] Bridges & Plugins",
+        "[4] Life Cycle",
     ];
-    let selected = match state.view {
+    let selected =    match state.view {
         View::ClusterFinOps => 0,
         View::ComposeStacks => 1,
         View::BridgesPlugins => 2,
+        View::ProductLifecycle => 3,
     };
     let tabs = Tabs::new(titles)
         .select(selected)
@@ -141,6 +143,7 @@ fn draw_body(f: &mut Frame, area: ratatui::layout::Rect, state: &AppState) {
         View::ClusterFinOps => draw_cluster(f, area, state),
         View::ComposeStacks => stacks::draw(f, area, state),
         View::BridgesPlugins => draw_bridges(f, area, state),
+        View::ProductLifecycle => draw_lifecycle(f, area, state),
     }
 }
 
@@ -170,7 +173,7 @@ fn draw_bridges(f: &mut Frame, area: ratatui::layout::Rect, state: &AppState) {
                 Line::from(""),
                 Line::from(vec![Span::styled("Cloudflare Tunnel (cloudflared): ", Style::default().fg(theme::TEXT)), Span::styled(token_status, Style::default().fg(token_color))]),
                 Line::from("• Serviço executado via Docker Compose com cloudflare/cloudflared:latest."),
-                Line::from("• Comando: tunnel --no-autoupdate run --token \"$TUNNEL_TOKEN\" (token definido no .env)."),
+                Line::from("• Comando: tunnel --no-autoupdate run --token «redacted-secret» (token definido no .env)."),
                 Line::from("• Configure TUNNEL_TOKEN no painel [Tab] Env. Em Build, edite build.env (IMAGE, FRAPPE_REF, flags de build)."),
                 Line::from(""),
                 Line::from(Span::styled("Dica: use [Tab] para alternar entre Env, build.env e Tunnel. [w] salva o arquivo ativo.", Style::default().fg(theme::SUBTEXT))),
@@ -184,6 +187,29 @@ fn draw_bridges(f: &mut Frame, area: ratatui::layout::Rect, state: &AppState) {
             f.render_widget(p, area);
         }
     }
+}
+
+fn draw_lifecycle(f: &mut Frame, area: ratatui::layout::Rect, _state: &AppState) {
+    let block = Block::default()
+        .title(" Gestão do Ciclo de Vida do Produto ")
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded);
+
+    let items = vec![
+        Line::from("• [N] Novo Produto"),
+        Line::from("• [S] Selecionar Produto"),
+        Line::from("• [L] Listar Produtos"),
+        Line::from("• [I] Inspecionar Produto"),
+        Line::from("• [R] Remover Produto"),
+        Line::from(""),
+        Line::from(Span::styled("Status: Pronto para gerenciar", Style::default().fg(theme::GREEN))),
+    ];
+
+    let p = Paragraph::new(items)
+        .block(block)
+        .wrap(Wrap { trim: true });
+
+    f.render_widget(p, area);
 }
 
 fn draw_footer(f: &mut Frame, area: ratatui::layout::Rect, state: &AppState) {
@@ -205,9 +231,9 @@ fn draw_footer(f: &mut Frame, area: ratatui::layout::Rect, state: &AppState) {
                 "[Tab] Switch Pane | [↑/↓] Navigate | [1-4] Detail Tab | [a] Add Node | [d] Drop Node | [s] Simulate Load | [q] Quit"
             }
             View::ComposeStacks => match state.stack_panel {
-                StackPanel::Overview => "[Tab] Operações/Repositórios | [p] Produto | [N] Novo produto | [1-3] Views | [q] Quit",
+                StackPanel::Overview => "[Tab] Operações/Repositórios | [p] Produto | [N] Novo produto | [1-4] Views | [q] Quit",
                 StackPanel::Operations => {
-                    "[↑/↓] Ação | [Enter] Executar | [u] Subir | [x] Parar | [t] Reiniciar | [c] Consultar | [f] Pre-flight | [k] Doctor | [K] Corrigir | [m] Migrar | [o] Logs | [N] Novo produto | [Tab] Próximo painel | [q] Quit"
+                    "[↑/↓] Ação | [Enter] Executar | [u] Subir | [x] Parar | [t] Reiniciar | [c] Consultar | [f] Pre-flight | [k] Doctor | [P] Infra | [D] DB | [Tab] Alternar painel | [q] Quit"
                 }
                 StackPanel::AppRepos => "[↑/↓] Selecionar | [a] Adicionar | [d] Remover | [N] Novo produto | [Tab] Próximo painel | [q] Quit",
             },
@@ -228,8 +254,11 @@ fn draw_footer(f: &mut Frame, area: ratatui::layout::Rect, state: &AppState) {
                         "[↑/↓] Variável | [Enter] Editar | [w] Salvar build.env | [r] Recarregar | [Tab] Tunnel | [q] Quit"
                     }
                 }
-                BridgePanel::Tunnel => "[Tab] Env | [1-3] Views | [q] Quit",
+                BridgePanel::Tunnel => "[Tab] Env | [1-4] Views | [q] Quit",
             },
+            View::ProductLifecycle => {
+                "[N] Novo | [S] Selecionar | [L] Listar | [I] Inspecionar | [R] Remover | [q] Quit"
+            }
         },
     };
     let p = Paragraph::new(text)

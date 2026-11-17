@@ -23,6 +23,7 @@ pub enum View {
     ClusterFinOps,
     ComposeStacks,
     BridgesPlugins,
+    ProductLifecycle,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -683,10 +684,24 @@ impl AppState {
                 }
                 None
             }
-            KeyCode::Char('4')
-                if self.view == View::ClusterFinOps && self.focus == FocusPane::Detail =>
-            {
-                self.detail_tab = DetailTab::Forecast7d;
+            KeyCode::Char('N') if self.view == View::ProductLifecycle => {
+                // TODO: Implementar lógica de Novo Produto
+                None
+            }
+            KeyCode::Char('S') if self.view == View::ProductLifecycle => {
+                // TODO: Implementar lógica de Selecionar Produto
+                None
+            }
+            KeyCode::Char('L') if self.view == View::ProductLifecycle => {
+                // TODO: Implementar lógica de Listar Produtos
+                None
+            }
+            KeyCode::Char('I') if self.view == View::ProductLifecycle => {
+                // TODO: Implementar lógica de Inspecionar Produto
+                None
+            }
+            KeyCode::Char('R') if self.view == View::ProductLifecycle => {
+                // TODO: Implementar lógica de Remover Produto
                 None
             }
             KeyCode::Tab => {
@@ -1020,6 +1035,7 @@ impl AppState {
                     }
                 }
             }
+            View::ProductLifecycle => {}
         }
     }
     fn move_down(&mut self) {
@@ -1070,6 +1086,7 @@ impl AppState {
                     }
                 }
             }
+            View::ProductLifecycle => {}
         }
     }
 
@@ -1963,33 +1980,39 @@ impl AppState {
         let mut checks = Vec::new();
         let env_path = Path::new("products").join(label).join(".env");
         let example_path = Path::new("products").join(label).join(".env.example");
-        let compose_base = Path::new("common/compose.base.yaml");
-        let dc = Path::new("common/dc.sh");
-
-        checks.push(if compose_base.exists() {
+        let docker = std::process::Command::new("docker")
+            .arg("--version")
+            .output()
+            .is_ok();
+        checks.push(if docker {
             PreflightCheck {
-                name: "Compose base".into(),
+                name: "Docker Engine".into(),
                 status: PreflightStatus::Ok,
-                detail: "common/compose.base.yaml encontrado".into(),
+                detail: "docker CLI disponível".into(),
             }
         } else {
             PreflightCheck {
-                name: "Compose base".into(),
+                name: "Docker Engine".into(),
                 status: PreflightStatus::Error,
-                detail: "common/compose.base.yaml ausente".into(),
+                detail: "docker CLI não encontrado".into(),
             }
         });
-        checks.push(if dc.exists() {
+
+        let docker_compose = std::process::Command::new("docker")
+            .args(["compose", "version"])
+            .output()
+            .is_ok();
+        checks.push(if docker_compose {
             PreflightCheck {
-                name: "Script de orquestração".into(),
+                name: "Docker Compose".into(),
                 status: PreflightStatus::Ok,
-                detail: "common/dc.sh disponível".into(),
+                detail: "docker compose disponível".into(),
             }
         } else {
             PreflightCheck {
-                name: "Script de orquestração".into(),
+                name: "Docker Compose".into(),
                 status: PreflightStatus::Error,
-                detail: "common/dc.sh ausente".into(),
+                detail: "docker compose não encontrado".into(),
             }
         });
         checks.push(if example_path.exists() {
@@ -2103,6 +2126,40 @@ impl AppState {
     }
 
     pub fn refresh_onboarding(&mut self) {
+        let docker_ok = std::process::Command::new("docker").arg("--version").output().is_ok();
+        let docker_compose_ok = std::process::Command::new("docker").args(["compose", "version"]).output().is_ok();
+        
+        let pre_ok = self.preflight_ran
+            && !self
+                .preflight
+                .iter()
+                .any(|c| matches!(c.status, PreflightStatus::Error));
+
+        if self.products.is_empty() {
+            self.onboarding_steps = vec![
+                OnboardingStep {
+                    title: "1. Verificar dependências (Docker/Compose)".into(),
+                    done: docker_ok && docker_compose_ok,
+                    detail: if docker_ok && docker_compose_ok {
+                        "Docker e Docker Compose detectados".into()
+                    } else {
+                        "Docker CLI ou Docker Compose não encontrados".into()
+                    },
+                },
+                OnboardingStep {
+                    title: "2. Configurar domínios e Cloudflare".into(),
+                    done: false,
+                    detail: "Necessário para expor serviços.".into(),
+                },
+                OnboardingStep {
+                    title: "3. Provisionar ambiente".into(),
+                    done: false,
+                    detail: "Inicializar volumes e rede.".into(),
+                },
+            ];
+            return;
+        }
+
         let product = self.featured_product.clone();
         let label = product.label();
         let env_path = Path::new("products").join(label).join(".env");

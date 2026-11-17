@@ -459,6 +459,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
+name = "frappe-deployer"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "crossterm",
+ "futures",
+ "getrandom 0.3.4",
+ "ratatui",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tokio",
+]
+
+[[package]]
 name = "futures"
 version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -846,22 +862,6 @@ dependencies = [
  "log",
  "wasi",
  "windows-sys",
-]
-
-[[package]]
-name = "musical-lamp-tui"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "crossterm",
- "futures",
- "getrandom 0.3.4",
- "ratatui",
- "rusqlite",
- "serde",
- "serde_json",
- "serde_yaml",
- "tokio",
 ]
 
 [[package]]

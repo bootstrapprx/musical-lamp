@@ -74,7 +74,7 @@ fn install_panic_hook() {
 #[tokio::main]
 async fn main() -> io::Result<()> {
     if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
-        eprintln!("musical-lamp-tui precisa de um terminal interativo (TTY); stdin/stdout nao sao um terminal.");
+        eprintln!("frappe-deployer precisa de um terminal interativo (TTY); stdin/stdout nao sao um terminal.");
         std::process::exit(2);
     }
     match find_root() {
