@@ -334,7 +334,7 @@ fn draw_footer(f: &mut Frame, area: ratatui::layout::Rect, state: &AppState) {
                 BridgePanel::Tunnel => "[Tab] Env | [1-4] Views | [q] Quit",
             },
             View::ProductLifecycle => {
-                "[N] Novo | [S] Selecionar | [L] Listar | [I] Inspecionar | [R] Remover | [q] Quit"
+                "[N] Novo | [S] Selecionar | [L] Recarregar | [I] Inspecionar | [R] Remover | [↑/↓] Navegar | [q] Quit"
             }
         },
     };
