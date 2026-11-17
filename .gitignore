@@ -153,3 +153,6 @@ products/*/apps.json.tmp
 gui/node_modules/
 gui/dist/
 gui/release/
+
+# WEb app node_modules
+web/node_modules/
