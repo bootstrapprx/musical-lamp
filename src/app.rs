@@ -264,6 +264,7 @@ pub struct AppState {
     pub log_scroll: u16,
     pub featured_product: Product,
     pub products: Vec<Product>,
+    pub products_selected: usize,
     pub env_states: HashMap<Product, ProductEnv>,
     pub build_env_states: HashMap<Product, ProductEnv>,
     pub env_selected: usize,
@@ -302,6 +303,7 @@ impl AppState {
             discovered
         };
         let featured_product = products[0].clone();
+        let products_selected = 0;
         // Não inventar hosts/containers: o provider popula os dados a partir do
         // Docker no primeiro tick. Antes da coleta a tela fica explicitamente vazia.
         let nodes = Vec::new();
@@ -366,6 +368,7 @@ impl AppState {
             doctor: crate::domain::DoctorReport::default(),
             doctor_selected: 0,
             new_product_drafts: HashMap::new(),
+            products_selected: 0,
             control_plane: ControlPlane::new(
                 AppRegistry::load(Path::new("apps.yaml")).unwrap_or_else(|_| {
                     AppRegistry::from_yaml("api_version: musical-lamp/v1\nkind: AppRegistry\napps: []").unwrap()
@@ -667,24 +670,40 @@ impl AppState {
                 }
                 None
             }
+            KeyCode::Char('4') => {
+                if self.view == View::ClusterFinOps && self.focus == FocusPane::Detail {
+                    self.detail_tab = DetailTab::Forecast7d;
+                } else {
+                    self.view = View::ProductLifecycle;
+                }
+                None
+            }
             KeyCode::Char('N') if self.view == View::ProductLifecycle => {
-                // TODO: Implementar lógica de Novo Produto
                 None
             }
             KeyCode::Char('S') if self.view == View::ProductLifecycle => {
-                // TODO: Implementar lógica de Selecionar Produto
                 None
             }
             KeyCode::Char('L') if self.view == View::ProductLifecycle => {
-                // TODO: Implementar lógica de Listar Produtos
+                self.reload_product_catalog();
                 None
             }
             KeyCode::Char('I') if self.view == View::ProductLifecycle => {
-                // TODO: Implementar lógica de Inspecionar Produto
                 None
             }
             KeyCode::Char('R') if self.view == View::ProductLifecycle => {
-                // TODO: Implementar lógica de Remover Produto
+                None
+            }
+            KeyCode::Up if self.view == View::ProductLifecycle => {
+                if self.products_selected > 0 {
+                    self.products_selected -= 1;
+                }
+                None
+            }
+            KeyCode::Down if self.view == View::ProductLifecycle => {
+                if self.products_selected + 1 < self.products.len() {
+                    self.products_selected += 1;
+                }
                 None
             }
             KeyCode::Tab => {

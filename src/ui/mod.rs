@@ -189,21 +189,41 @@ fn draw_bridges(f: &mut Frame, area: ratatui::layout::Rect, state: &AppState) {
     }
 }
 
-fn draw_lifecycle(f: &mut Frame, area: ratatui::layout::Rect, _state: &AppState) {
+fn draw_lifecycle(f: &mut Frame, area: ratatui::layout::Rect, state: &AppState) {
     let block = Block::default()
         .title(" Gestão do Ciclo de Vida do Produto ")
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded);
 
-    let items = vec![
+    let mut items = vec![
+        Line::from(Span::styled("Produtos Detectados:", Style::default().add_modifier(Modifier::BOLD))),
+    ];
+
+    if state.products.is_empty() {
+        items.push(Line::from("  Nenhum produto encontrado na pasta products/"));
+    } else {
+        for p in &state.products {
+            let style = if p == &state.featured_product {
+                Style::default().fg(theme::MAUVE).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+            };
+            items.push(Line::from(vec![
+                Span::raw("  • "),
+                Span::styled(p.label(), style),
+            ]));
+        }
+    }
+
+    items.push(Line::from(""));
+    items.extend(vec![
+        Line::from("--- Ações ---"),
         Line::from("• [N] Novo Produto"),
         Line::from("• [S] Selecionar Produto"),
         Line::from("• [L] Listar Produtos"),
         Line::from("• [I] Inspecionar Produto"),
         Line::from("• [R] Remover Produto"),
-        Line::from(""),
-        Line::from(Span::styled("Status: Pronto para gerenciar", Style::default().fg(theme::GREEN))),
-    ];
+    ]);
 
     let p = Paragraph::new(items)
         .block(block)
@@ -257,7 +277,7 @@ fn draw_footer(f: &mut Frame, area: ratatui::layout::Rect, state: &AppState) {
                 BridgePanel::Tunnel => "[Tab] Env | [1-4] Views | [q] Quit",
             },
             View::ProductLifecycle => {
-                "[N] Novo | [S] Selecionar | [L] Listar | [I] Inspecionar | [R] Remover | [q] Quit"
+                "[N] Novo | [S] Selecionar | [L] Recarregar | [I] Inspecionar | [R] Remover | [↑/↓] Navegar | [q] Quit"
             }
         },
     };
