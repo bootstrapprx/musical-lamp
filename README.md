@@ -115,6 +115,27 @@ Correções automáticas são idempotentes quando possível, não inventam segre
 
 Operações Docker são executadas fora do loop de renderização e exibem saída incremental. A TUI não executa comandos destrutivos de volume automaticamente.
 
+## GUI desktop Electron/React
+
+O frontend desktop fica em `gui/` e usa o mesmo workspace `products/*` e o mesmo wrapper `common/dc.sh` da TUI. Ele não inicia Docker automaticamente, mascara segredos por padrão e confirma operações destrutivas. A remoção de produto apaga somente `products/<id>`; volumes Docker são preservados.
+
+Para executar em desenvolvimento:
+
+```bash
+cd gui
+npm install
+npm run dev
+```
+
+Para gerar o bundle do renderer ou um pacote desktop:
+
+```bash
+npm run build
+npm run dist
+```
+
+O fluxo completo de criação de produto continua na TUI; após criar ou alterar produtos, use **Recarregar** na GUI.
+
 ## Telemetria Docker
 
 - Coleta em worker de background (fora do tick de renderização), com cache do último snapshot válido.

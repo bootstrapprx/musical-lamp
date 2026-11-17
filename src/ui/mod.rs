@@ -190,46 +190,103 @@ fn draw_bridges(f: &mut Frame, area: ratatui::layout::Rect, state: &AppState) {
 }
 
 fn draw_lifecycle(f: &mut Frame, area: ratatui::layout::Rect, state: &AppState) {
-    let block = Block::default()
-        .title(" Gestão do Ciclo de Vida do Produto ")
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded);
-
-    let mut items = vec![
-        Line::from(Span::styled("Produtos Detectados:", Style::default().add_modifier(Modifier::BOLD))),
-    ];
-
-    if state.products.is_empty() {
-        items.push(Line::from("  Nenhum produto encontrado na pasta products/"));
-    } else {
-        for p in &state.products {
-            let style = if p == &state.featured_product {
-                Style::default().fg(theme::MAUVE).add_modifier(Modifier::BOLD)
+    let cols = layout::master_detail(area);
+    let items: Vec<ratatui::widgets::ListItem> = state
+        .products
+        .iter()
+        .map(|product| {
+            let selected = product == &state.featured_product;
+            let status = if state
+                .env_states
+                .get(product)
+                .map(|env| env.dirty)
+                .unwrap_or(false)
+            {
+                "alterado"
+            } else if state
+                .env_states
+                .get(product)
+                .map(|env| !env.vars.is_empty())
+                .unwrap_or(false)
+            {
+                "configurado"
             } else {
-                Style::default()
+                "sem .env"
             };
-            items.push(Line::from(vec![
-                Span::raw("  • "),
-                Span::styled(p.label(), style),
-            ]));
-        }
+            ratatui::widgets::ListItem::new(Line::from(vec![
+                Span::styled(
+                    if selected { "› " } else { "  " },
+                    Style::default().fg(if selected { theme::BLUE } else { theme::SUBTEXT }),
+                ),
+                Span::styled(
+                    product.label(),
+                    Style::default()
+                        .fg(if selected { theme::TEXT } else { theme::TEAL })
+                        .add_modifier(if selected { Modifier::BOLD } else { Modifier::empty() }),
+                ),
+                Span::styled(format!("  [{status}]"), Style::default().fg(theme::SUBTEXT)),
+            ]))
+        })
+        .collect();
+    f.render_widget(
+        ratatui::widgets::List::new(items).block(
+            Block::default()
+                .title("Produtos descobertos")
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(Style::default().fg(theme::BLUE)),
+        ),
+        cols[0],
+    );
+
+    let product = state.featured_product.label();
+    let env = state.env_states.get(&state.featured_product);
+    let build = state.build_env_states.get(&state.featured_product);
+    let apps = state.apps_for_featured();
+    let mut lines = vec![
+        Line::from(Span::styled(
+            format!("Produto ativo: {product}"),
+            Style::default().fg(theme::MAUVE).add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+        Line::from(format!(
+            ".env: {}",
+            env.map(|value| value.path_hint.as_str()).unwrap_or("ausente")
+        )),
+        Line::from(format!(
+            "Variáveis: {} | build.env: {}",
+            env.map(|value| value.vars.len()).unwrap_or(0),
+            build.map(|value| value.vars.len()).unwrap_or(0)
+        )),
+        Line::from(format!("Apps do bench: {}", apps.len())),
+        Line::from(""),
+        Line::from(Span::styled(
+            "Fluxo seguro",
+            Style::default().fg(theme::TEAL).add_modifier(Modifier::BOLD),
+        )),
+        Line::from("N cria os arquivos de configuração e seleciona o produto."),
+        Line::from("S alterna o produto ativo; L relê products/*."),
+        Line::from("I mostra um resumo; R pede confirmação pelo nome."),
+        Line::from("A remoção afeta apenas a pasta do produto; não remove volumes."),
+    ];
+    if let Some(notice) = &state.catalog_notice {
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            notice.clone(),
+            Style::default().fg(theme::YELLOW),
+        )));
     }
-
-    items.push(Line::from(""));
-    items.extend(vec![
-        Line::from("--- Ações ---"),
-        Line::from("• [N] Novo Produto"),
-        Line::from("• [S] Selecionar Produto"),
-        Line::from("• [L] Listar Produtos"),
-        Line::from("• [I] Inspecionar Produto"),
-        Line::from("• [R] Remover Produto"),
-    ]);
-
-    let p = Paragraph::new(items)
-        .block(block)
-        .wrap(Wrap { trim: true });
-
-    f.render_widget(p, area);
+    f.render_widget(
+        Paragraph::new(lines)
+            .block(
+                Block::default()
+                    .title("Detalhes e ações")
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded),
+            )
+            .wrap(Wrap { trim: true }),
+        cols[1],
+    );
 }
 
 fn draw_footer(f: &mut Frame, area: ratatui::layout::Rect, state: &AppState) {

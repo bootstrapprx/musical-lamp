@@ -146,6 +146,7 @@ pub enum ConfirmAction {
     OverwriteEnvFromExample(Product),
     QuitApp,
     SwitchProduct(Product),
+    RemoveProduct(Product),
     RunOps { product: Product, action: String },
 }
 
@@ -264,7 +265,6 @@ pub struct AppState {
     pub log_scroll: u16,
     pub featured_product: Product,
     pub products: Vec<Product>,
-    pub products_selected: usize,
     pub env_states: HashMap<Product, ProductEnv>,
     pub build_env_states: HashMap<Product, ProductEnv>,
     pub env_selected: usize,
@@ -303,7 +303,6 @@ impl AppState {
             discovered
         };
         let featured_product = products[0].clone();
-        let products_selected = 0;
         // Não inventar hosts/containers: o provider popula os dados a partir do
         // Docker no primeiro tick. Antes da coleta a tela fica explicitamente vazia.
         let nodes = Vec::new();
@@ -368,7 +367,6 @@ impl AppState {
             doctor: crate::domain::DoctorReport::default(),
             doctor_selected: 0,
             new_product_drafts: HashMap::new(),
-            products_selected: 0,
             control_plane: ControlPlane::new(
                 AppRegistry::load(Path::new("apps.yaml")).unwrap_or_else(|_| {
                     AppRegistry::from_yaml("api_version: musical-lamp/v1\nkind: AppRegistry\napps: []").unwrap()
@@ -679,31 +677,27 @@ impl AppState {
                 None
             }
             KeyCode::Char('N') if self.view == View::ProductLifecycle => {
+                self.open_new_product_modal();
                 None
             }
             KeyCode::Char('S') if self.view == View::ProductLifecycle => {
+                self.select_next_product();
                 None
             }
             KeyCode::Char('L') if self.view == View::ProductLifecycle => {
                 self.reload_product_catalog();
+                self.catalog_notice = Some(format!(
+                    "Catálogo recarregado: {} produto(s) encontrado(s).",
+                    self.products.len()
+                ));
                 None
             }
             KeyCode::Char('I') if self.view == View::ProductLifecycle => {
+                self.inspect_featured_product();
                 None
             }
             KeyCode::Char('R') if self.view == View::ProductLifecycle => {
-                None
-            }
-            KeyCode::Up if self.view == View::ProductLifecycle => {
-                if self.products_selected > 0 {
-                    self.products_selected -= 1;
-                }
-                None
-            }
-            KeyCode::Down if self.view == View::ProductLifecycle => {
-                if self.products_selected + 1 < self.products.len() {
-                    self.products_selected += 1;
-                }
+                self.request_remove_featured_product();
                 None
             }
             KeyCode::Tab => {
@@ -1249,13 +1243,33 @@ impl AppState {
         let product = self.featured_product.clone();
         match action {
             "provision_infra" => {
-                let plan = self.control_plane.plan(product.label()).unwrap();
-                self.control_plane.execute_prepare_infrastructure(product.label(), &crate::executor::LocalExecutor).unwrap();
+                let result = self.control_plane.execute_prepare_infrastructure(
+                    product.label(),
+                    &crate::executor::LocalExecutor,
+                );
+                let message = match result {
+                    Ok(operation) => format!("infraestrutura: {}", operation.status),
+                    Err(error) => format!("provisionamento de infraestrutura não executado: {error:?}"),
+                };
+                if let Some(ops) = self.ops_states.get_mut(&product) {
+                    ops.last_action = message.clone();
+                    ops.log_lines.push(format!("[control-plane] {message}"));
+                }
                 return None;
             }
             "provision_db" => {
-                let plan = self.control_plane.plan(product.label()).unwrap();
-                self.control_plane.execute_database_provisioning(product.label(), &crate::executor::LocalExecutor).unwrap();
+                let result = self.control_plane.execute_database_provisioning(
+                    product.label(),
+                    &crate::executor::LocalExecutor,
+                );
+                let message = match result {
+                    Ok(operation) => format!("banco: {}", operation.status),
+                    Err(error) => format!("provisionamento de banco não executado: {error:?}"),
+                };
+                if let Some(ops) = self.ops_states.get_mut(&product) {
+                    ops.last_action = message.clone();
+                    ops.log_lines.push(format!("[control-plane] {message}"));
+                }
                 return None;
             }
             "preflight" => {
@@ -2131,12 +2145,6 @@ impl AppState {
         let docker_ok = std::process::Command::new("docker").arg("--version").output().is_ok();
         let docker_compose_ok = std::process::Command::new("docker").args(["compose", "version"]).output().is_ok();
         
-        let pre_ok = self.preflight_ran
-            && !self
-                .preflight
-                .iter()
-                .any(|c| matches!(c.status, PreflightStatus::Error));
-
         if self.products.is_empty() {
             self.onboarding_steps = vec![
                 OnboardingStep {
@@ -2642,6 +2650,10 @@ impl AppState {
                 self.switch_to_product(product);
                 None
             }
+            ConfirmAction::RemoveProduct(product) => {
+                self.remove_product(&product);
+                None
+            }
             ConfirmAction::RunOps { product, action } => self.start_ops_action(&product, &action),
         }
     }
@@ -3013,6 +3025,102 @@ impl AppState {
         }
         self.refresh_onboarding();
         self.run_doctor_scan(false);
+    }
+
+    fn select_next_product(&mut self) {
+        if self.products.len() < 2 {
+            self.catalog_notice = Some("Apenas um produto está disponível para seleção.".into());
+            return;
+        }
+        let index = self
+            .products
+            .iter()
+            .position(|product| product == &self.featured_product)
+            .unwrap_or(0);
+        let target = self.products[(index + 1) % self.products.len()].clone();
+        let dirty = self.current_env().map(|env| env.dirty).unwrap_or(false)
+            || self.current_build_env().map(|env| env.dirty).unwrap_or(false);
+        if dirty {
+            self.pending_switch_to = Some(target.clone());
+            self.modal = Modal::ConfirmText {
+                title: "Alterações não salvas".into(),
+                message: format!(
+                    "Digite '{}' para trocar de produto sem salvar as alterações atuais.",
+                    target.label()
+                ),
+                required: target.label().into(),
+                input: String::new(),
+                action: ConfirmAction::SwitchProduct(target),
+            };
+        } else {
+            self.switch_to_product(target);
+        }
+    }
+
+    fn inspect_featured_product(&mut self) {
+        let product = self.featured_product.clone();
+        let env = self.env_states.get(&product);
+        let env_status = match env {
+            Some(env) if env.dirty => "alterações pendentes".to_string(),
+            Some(env) if env.vars.is_empty() => "sem variáveis carregadas".to_string(),
+            Some(_) => ".env carregado".to_string(),
+            None => ".env indisponível".to_string(),
+        };
+        let apps = self.apps_for_featured().len();
+        let build = self.build_env_states.get(&product);
+        let build_status = if build.map(|env| !env.vars.is_empty()).unwrap_or(false) {
+            "build.env carregado"
+        } else {
+            "build.env vazio/ausente"
+        };
+        self.catalog_notice = Some(format!(
+            "{} — {}; {}; {} app(s).",
+            product.label(),
+            env_status,
+            build_status,
+            apps
+        ));
+    }
+
+    fn request_remove_featured_product(&mut self) {
+        if self.products.len() <= 1 {
+            self.catalog_notice = Some("O último produto não pode ser removido pela TUI.".into());
+            return;
+        }
+        let product = self.featured_product.clone();
+        self.modal = Modal::ConfirmText {
+            title: "Remover produto".into(),
+            message: format!(
+                "Isso remove somente products/{}/. Nenhum volume Docker será apagado. Digite o nome do produto para confirmar.",
+                product.label()
+            ),
+            required: product.label().into(),
+            input: String::new(),
+            action: ConfirmAction::RemoveProduct(product),
+        };
+    }
+
+    fn remove_product(&mut self, product: &Product) {
+        let dir = Path::new("products").join(product.label());
+        match fs::remove_dir_all(&dir) {
+            Ok(()) => {
+                self.env_states.remove(product);
+                self.build_env_states.remove(product);
+                self.ops_states.remove(product);
+                self.new_product_drafts.remove(product.label());
+                self.reload_product_catalog();
+                self.catalog_notice = Some(format!(
+                    "Produto '{}' removido. Volumes e stacks Docker foram preservados.",
+                    product.label()
+                ));
+            }
+            Err(error) => {
+                self.catalog_notice = Some(format!(
+                    "Não foi possível remover '{}': {error}",
+                    product.label()
+                ));
+            }
+        }
     }
 
     fn switch_to_product(&mut self, product: Product) {
