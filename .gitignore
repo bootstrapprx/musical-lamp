@@ -148,3 +148,8 @@ products/accounting/.env
 products/*/apps.json.bak-*
 products/*/.env.bak.*
 products/*/apps.json.tmp
+
+# GUI Electron/React
+gui/node_modules/
+gui/dist/
+gui/release/

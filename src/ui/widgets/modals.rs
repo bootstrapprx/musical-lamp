@@ -77,7 +77,7 @@ pub fn draw_add_node(f: &mut Frame, area: Rect, form: &AddNodeForm) {
     let hint_text = if compact {
         "Tab: campo | Enter: confirma | Esc: cancela"
     } else {
-        "Tab alterna campos | Enter confirma, adiciona o nó e recalcula o orçamento global | Esc cancela"
+        "Tab alterna campos | Enter adiciona nó e recalcula orçamento | Esc cancela"
     };
     let hint = Paragraph::new(hint_text)
         .style(Style::default().fg(theme::SUBTEXT))

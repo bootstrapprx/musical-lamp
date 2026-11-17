@@ -1,7 +1,32 @@
 [
-  {"content":"Entender a base atual e o que precisa mudar","status":"completed","activeForm":"Entendendo a base atual"},
-  {"content":"Ajustar a tela principal de servidores e custos","status":"completed","activeForm":"Ajustando a tela principal"},
-  {"content":"Melhorar a configuração inicial automática e a fluidez","status":"completed","activeForm":"Melhorando a configuração inicial"},
-  {"content":"Revisar janelas, atalhos e detalhes pedidos","status":"completed","activeForm":"Revisando janelas e atalhos"},
-  {"content":"Testar a versão final e corrigir erros","status":"completed","activeForm":"Testando e corrigindo erros"}
+  {
+    "id": "1",
+    "content": "Explorar a TUI e o código atual para entender estado, UI, telemetria e tratamento de build.env",
+    "status": "completed",
+    "priority": "high"
+  },
+  {
+    "id": "2",
+    "content": "Ajustar a arquitetura e a interface para refletir o layout e os componentes pedidos (painéis, abas, modais e atalhos)",
+    "status": "completed",
+    "priority": "high"
+  },
+  {
+    "id": "3",
+    "content": "Incluir o arquivo build.env no fluxo do produto (visualização/edição e validações relevantes)",
+    "status": "completed",
+    "priority": "high"
+  },
+  {
+    "id": "4",
+    "content": "Compilar e corrigir erros até a TUI funcionar",
+    "status": "completed",
+    "priority": "high"
+  },
+  {
+    "id": "5",
+    "content": "Revisar o que ainda difere ou falta e resumir o resultado",
+    "status": "completed",
+    "priority": "medium"
+  }
 ]

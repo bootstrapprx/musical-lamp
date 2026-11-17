@@ -9,7 +9,7 @@
   "status": "ready",
   "note": "Ready: all 2 checks pass.",
   "created_ms": 1794595666281,
-  "updated_ms": 1794799684703,
+  "updated_ms": 1794798542114,
   "checks": [
     {
       "round": 1,
@@ -532,31 +532,13 @@
       "note": "`cargo test --quiet` passed.",
       "artifacts": [],
       "at_ms": 1794798542111
-    },
-    {
-      "round": 30,
-      "check": "build",
-      "passed": true,
-      "similarity": null,
-      "note": "`cargo build --quiet` passed.",
-      "artifacts": [],
-      "at_ms": 1794799684610
-    },
-    {
-      "round": 30,
-      "check": "own-tests",
-      "passed": true,
-      "similarity": null,
-      "note": "`cargo test --quiet` passed.",
-      "artifacts": [],
-      "at_ms": 1794799684694
     }
   ],
   "agent_session": null,
   "agent_session_by": "opencode",
   "capture_deep": true,
   "allowed_actions": [],
-  "last_reply": "A interface de terminal foi evoluída para mostrar seus servidores, os serviços em cada um e os custos em tempo real, com painéis de uso e dinheiro, abas de detalhes (registros, explicação de custos, configuração e previsão) e janelas para adicionar ou remover servidores com atualização automática do orçamento. O que já existia para configurar produtos e operar os serviços foi mantido, e a configuração inicial agora avança de forma mais automática, com verificações e preparação básica quando possível, mantendo a tela fluida durante as atualizações.\n\nO que pode diferir do desejado é que, sem conexão real com seus servidores, a tela usa uma simulação realista para você ver tudo funcionando; custos, status e operações reais dependem do seu ambiente e dos acessos disponíveis. Ainda pode haver partes de diagnóstico ou operações avançadas que só ficam completas quando conectadas aos seus dados reais.\n\nUma boa próxima pergunta seria pedir para conectar essa interface aos seus servidores e serviços reais, para que os custos e o estado venham direto do que está rodando.",
+  "last_reply": "Atualizei o painel de controle do seu orquestrador para ficar alinhado com a visão completa de servidores, aplicações e custos: agora ele mostra o conjunto de máquinas, os serviços de cada uma com o custo proporcional e o espaço ocioso pago, além de um painel de saúde e finanças com consumo, histórico, projeção e abas de detalhes (registros, composição, explicação de custos e previsão). Também deixei as janelas de adicionar e remover servidor funcionais pelo teclado e ajustei as versões e imagens do projeto para acompanharem os alvos mais recentes.\n\nO que pode diferir do que você imaginou: a telemetria vem de uma simulação realista enquanto não houver conexão real com seus servidores/containers, então os números servem para demonstração e comparação, não como cobrança real. Mantive as partes que já funcionavam no projeto (como gestão de produtos, configurações e operações) e não inventei referências obrigatórias de build que precisam ser definidas por você.\n\nUma boa próxima ideia é pedir para conectar os dados reais dos seus servidores e containers, para que os custos e alertas passem a refletir o ambiente de verdade.",
   "asset_budget_usd": 5.0,
   "generate_assets": false,
   "app_in_root": true,

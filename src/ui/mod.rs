@@ -189,33 +189,110 @@ fn draw_bridges(f: &mut Frame, area: ratatui::layout::Rect, state: &AppState) {
     }
 }
 
-fn draw_lifecycle(f: &mut Frame, area: ratatui::layout::Rect, _state: &AppState) {
-    let block = Block::default()
-        .title(" Gestão do Ciclo de Vida do Produto ")
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded);
+fn draw_lifecycle(f: &mut Frame, area: ratatui::layout::Rect, state: &AppState) {
+    let cols = layout::master_detail(area);
+    let items: Vec<ratatui::widgets::ListItem> = state
+        .products
+        .iter()
+        .map(|product| {
+            let selected = product == &state.featured_product;
+            let status = if state
+                .env_states
+                .get(product)
+                .map(|env| env.dirty)
+                .unwrap_or(false)
+            {
+                "alterado"
+            } else if state
+                .env_states
+                .get(product)
+                .map(|env| !env.vars.is_empty())
+                .unwrap_or(false)
+            {
+                "configurado"
+            } else {
+                "sem .env"
+            };
+            ratatui::widgets::ListItem::new(Line::from(vec![
+                Span::styled(
+                    if selected { "› " } else { "  " },
+                    Style::default().fg(if selected { theme::BLUE } else { theme::SUBTEXT }),
+                ),
+                Span::styled(
+                    product.label(),
+                    Style::default()
+                        .fg(if selected { theme::TEXT } else { theme::TEAL })
+                        .add_modifier(if selected { Modifier::BOLD } else { Modifier::empty() }),
+                ),
+                Span::styled(format!("  [{status}]"), Style::default().fg(theme::SUBTEXT)),
+            ]))
+        })
+        .collect();
+    f.render_widget(
+        ratatui::widgets::List::new(items).block(
+            Block::default()
+                .title("Produtos descobertos")
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(Style::default().fg(theme::BLUE)),
+        ),
+        cols[0],
+    );
 
-    let items = vec![
-        Line::from("• [N] Novo Produto"),
-        Line::from("• [S] Selecionar Produto"),
-        Line::from("• [L] Listar Produtos"),
-        Line::from("• [I] Inspecionar Produto"),
-        Line::from("• [R] Remover Produto"),
+    let product = state.featured_product.label();
+    let env = state.env_states.get(&state.featured_product);
+    let build = state.build_env_states.get(&state.featured_product);
+    let apps = state.apps_for_featured();
+    let mut lines = vec![
+        Line::from(Span::styled(
+            format!("Produto ativo: {product}"),
+            Style::default().fg(theme::MAUVE).add_modifier(Modifier::BOLD),
+        )),
         Line::from(""),
-        Line::from(Span::styled("Status: Pronto para gerenciar", Style::default().fg(theme::GREEN))),
+        Line::from(format!(
+            ".env: {}",
+            env.map(|value| value.path_hint.as_str()).unwrap_or("ausente")
+        )),
+        Line::from(format!(
+            "Variáveis: {} | build.env: {}",
+            env.map(|value| value.vars.len()).unwrap_or(0),
+            build.map(|value| value.vars.len()).unwrap_or(0)
+        )),
+        Line::from(format!("Apps do bench: {}", apps.len())),
+        Line::from(""),
+        Line::from(Span::styled(
+            "Fluxo seguro",
+            Style::default().fg(theme::TEAL).add_modifier(Modifier::BOLD),
+        )),
+        Line::from("N cria os arquivos de configuração e seleciona o produto."),
+        Line::from("S alterna o produto ativo; L relê products/*."),
+        Line::from("I mostra um resumo; R pede confirmação pelo nome."),
+        Line::from("A remoção afeta apenas a pasta do produto; não remove volumes."),
     ];
-
-    let p = Paragraph::new(items)
-        .block(block)
-        .wrap(Wrap { trim: true });
-
-    f.render_widget(p, area);
+    if let Some(notice) = &state.catalog_notice {
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            notice.clone(),
+            Style::default().fg(theme::YELLOW),
+        )));
+    }
+    f.render_widget(
+        Paragraph::new(lines)
+            .block(
+                Block::default()
+                    .title("Detalhes e ações")
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded),
+            )
+            .wrap(Wrap { trim: true }),
+        cols[1],
+    );
 }
 
 fn draw_footer(f: &mut Frame, area: ratatui::layout::Rect, state: &AppState) {
     let text = match &state.modal {
-        Modal::AddNode(_) => "[Tab] Campo seguinte | [Enter] Confirmar | [Esc] Cancelar",
-        Modal::DropNode { .. } => "[Tab/←/→] Alternar | [Enter/y] Confirmar remoção | [Esc/n] Cancelar",
+        Modal::AddNode(_) => "[Tab] Campo | [Enter] Confirmar | [Esc] Cancelar",
+        Modal::DropNode { .. } => "[Tab/←/→] Alternar | [Enter/y] Confirmar | [Esc/n] Cancelar",
         Modal::AddApp(form) => {
             if form.field == crate::app::AppField::Ref {
                 "[↑/↓] Selecionar ref | [Espaço/Enter] Abrir/confirmar | [Ctrl+n] Nova ref | [Tab] Campo | [Esc] Fechar"
